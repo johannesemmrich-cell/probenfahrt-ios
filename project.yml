@@ -1,0 +1,79 @@
+name: Probenfahrt
+options:
+  bundleIdPrefix: com.johannesemmrich
+  deploymentTarget:
+    iOS: "26.0"
+  xcodeVersion: "26.6"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+  defaultConfig: Debug
+
+configs:
+  Debug: debug
+  Release: release
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "26.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_PREVIEWS: YES
+
+targets:
+  Probenfahrt:
+    type: application
+    platform: iOS
+    sources:
+      - path: Probenfahrt
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.johannesemmrich.probenfahrt
+        PRODUCT_NAME: Probenfahrt
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Probenfahrt
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+
+  ProbenfahrtTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: ProbenfahrtTests
+    dependencies:
+      - target: Probenfahrt
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+
+  ProbenfahrtUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: ProbenfahrtUITests
+    dependencies:
+      - target: Probenfahrt
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Probenfahrt
+
+schemes:
+  Probenfahrt:
+    build:
+      targets:
+        Probenfahrt: all
+        ProbenfahrtTests: [test]
+        ProbenfahrtUITests: [test]
+    test:
+      config: Debug
+      targets:
+        - ProbenfahrtTests
+        - ProbenfahrtUITests
+    run:
+      config: Debug
+    archive:
+      config: Release
