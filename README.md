@@ -46,6 +46,14 @@ Kein Apple-Entwicklerkonto/Team nötig für Simulator-Builds (kein CloudKit,
 keine Push-Capabilities in diesem Schritt) — `CODE_SIGN_STYLE: Automatic`
 in `project.yml` reicht aus.
 
+**Falls der Simulator beim Start hängt (weißer Screen, dreht sich endlos):**
+Das lag bei uns am iOS-26.5-Runtime-Image, nicht an der App — mit iPhone 17
+Pro auf **iOS 26.4.1** lief der Start zuverlässig. Falls das nochmal
+auftritt: in Xcode oben rechts einfach auf ein Gerät mit einer anderen
+iOS-Runtime-Version wechseln (Window → Devices and Simulators zeigt
+installierte Runtimes). Kein Debugging-/Entwicklerkonto-Problem — separat
+geprüft (auch mit deaktiviertem "Debug executable" trat es weiter auf).
+
 ## Test-Zugänge (Mock-Daten)
 
 - **Gruppen-Beitrittscode:** `LABOR2026` ("Laborteam Nord", ~10 simulierte
