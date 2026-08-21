@@ -31,6 +31,11 @@ protocol UserRepository {
     @discardableResult
     func createPharmacyUser(firmName: String, groupID: UUID) async throws -> User
     func updateUser(id: UUID, name: String, abbreviation: String) async throws
+    /// Used both for self-promotion to Haupt-Admin (via the Admin-Code field
+    /// in Einstellungen) and Vice-Admin promotion/demotion (via
+    /// MemberDetailView). Refuses to demote a group's last Haupt-Admin, same
+    /// guard as `deleteUser`.
+    func setRole(id: UUID, role: UserRole) async throws
     func deleteUser(id: UUID) async throws
 }
 
@@ -92,6 +97,16 @@ final class SwiftDataUserRepository: UserRepository {
         guard let user = try await user(id: id) else { return }
         user.name = name
         user.abbreviation = abbreviation
+        try context.save()
+    }
+
+    func setRole(id: UUID, role: UserRole) async throws {
+        guard let user = try await user(id: id) else { return }
+        if user.role == .admin, role != .admin, let groupID = user.groupID {
+            let adminCount = try await allUsers(inGroup: groupID).filter { $0.role == .admin }.count
+            guard adminCount > 1 else { throw UserRepositoryError.cannotRemoveLastAdmin }
+        }
+        user.role = role
         try context.save()
     }
 

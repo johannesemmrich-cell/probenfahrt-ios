@@ -23,13 +23,24 @@ final class DevModeStore {
         didSet { UserDefaults.standard.set(isPharmacyModeActive, forKey: pharmacyModeKey) }
     }
 
+    /// Grants full Haupt-Admin rights everywhere `isFullAdmin`/
+    /// `isEffectiveAdmin` is checked — a DevMode-gated equivalent of the
+    /// standalone "Als Admin anzeigen" toggle in Einstellungen, added
+    /// alongside it (not replacing it yet) so the preview still works once
+    /// that older, ungated toggle is eventually removed (Backlog #2).
+    var isAdminPreviewActive: Bool {
+        didSet { UserDefaults.standard.set(isAdminPreviewActive, forKey: adminPreviewKey) }
+    }
+
     private let storageKey = "com.johannesemmrich.probenfahrt.devModeActive"
     private let pharmacyTabPreviewKey = "com.johannesemmrich.probenfahrt.devPharmacyTabPreview"
     private let pharmacyModeKey = "com.johannesemmrich.probenfahrt.devPharmacyModeActive"
+    private let adminPreviewKey = "com.johannesemmrich.probenfahrt.devAdminPreviewActive"
 
     init() {
         isActive = UserDefaults.standard.bool(forKey: storageKey)
         isPharmacyTabPreviewActive = UserDefaults.standard.bool(forKey: pharmacyTabPreviewKey)
         isPharmacyModeActive = UserDefaults.standard.bool(forKey: pharmacyModeKey)
+        isAdminPreviewActive = UserDefaults.standard.bool(forKey: adminPreviewKey)
     }
 }

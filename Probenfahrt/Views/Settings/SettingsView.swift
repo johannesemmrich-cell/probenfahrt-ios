@@ -16,6 +16,8 @@ struct SettingsView: View {
     @State private var isShowingLeaveConfirmation = false
     @State private var versionTapCount = 0
     @State private var showDeveloperUnlock = false
+    @State private var adminCode = ""
+    @State private var adminCodeError: String?
 
     private let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
     private let buildNumber = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
@@ -23,7 +25,8 @@ struct SettingsView: View {
     private var userRepository: UserRepository { SwiftDataUserRepository(context: modelContext) }
     private var samplesRepository: SamplesRepository { SwiftDataSamplesRepository(context: modelContext) }
 
-    private var isAdmin: Bool { isEffectiveAdmin(user: currentUser, adminPreview: adminPreview) }
+    private var isAdmin: Bool { isEffectiveAdmin(user: currentUser, adminPreview: adminPreview, devMode: devMode) }
+    private var isFullAdmin: Bool { Probenfahrt.isFullAdmin(user: currentUser, adminPreview: adminPreview, devMode: devMode) }
 
     /// Effective, not just the real account — DevMode's full "Apotheken-Modus"
     /// switch (see RootTabView) shrinks Einstellungen the same way it shrinks
@@ -112,6 +115,23 @@ struct SettingsView: View {
                         .listRowBackground(Color.clear)
                         .padding(.vertical, 4)
                 }
+
+                if !isPharmacyAccount && currentUser.role != .admin {
+                    Section {
+                        TextField("Code", text: $adminCode)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        Button("Bestätigen") {
+                            Task { await submitAdminCode() }
+                        }
+                        .disabled(adminCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        if let adminCodeError {
+                            Text(adminCodeError).font(.footnote).foregroundStyle(.red)
+                        }
+                    } footer: {
+                        Text("Code eingeben, um Haupt-Admin-Rechte freizuschalten.")
+                    }
+                }
             }
             .navigationTitle("Einstellungen")
             .developerFeedbackOverlay(isActive: devMode.isActive, screen: "Einstellungen", feature: "Profil", element: "Formular")
@@ -136,13 +156,13 @@ struct SettingsView: View {
                 LabeledContent("Firmenname", value: currentUser.name)
             } else {
                 TextField("Name", text: $name)
-                if isAdmin {
+                if isFullAdmin {
                     TextField("Kürzel", text: $abbreviation)
                         .textInputAutocapitalization(.characters)
                         .autocorrectionDisabled()
                 } else {
                     LabeledContent("Kürzel", value: abbreviation)
-                    Text("Dein Kürzel steht fest. Nur ein Admin kann es noch ändern.")
+                    Text("Dein Kürzel steht fest. Nur der Haupt-Admin kann es noch ändern.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -203,7 +223,7 @@ struct SettingsView: View {
     private func saveProfile() async {
         errorMessage = nil
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedAbbreviation = isAdmin
+        let trimmedAbbreviation = isFullAdmin
             ? abbreviation.trimmingCharacters(in: .whitespacesAndNewlines)
             : currentUser.abbreviation
         guard !trimmedName.isEmpty, !trimmedAbbreviation.isEmpty else {
@@ -212,7 +232,7 @@ struct SettingsView: View {
         }
         guard let groupID = currentUser.groupID else { return }
 
-        if isAdmin, trimmedAbbreviation.lowercased() != currentUser.abbreviation.lowercased() {
+        if isFullAdmin, trimmedAbbreviation.lowercased() != currentUser.abbreviation.lowercased() {
             if let taken = try? await userRepository.isAbbreviationTaken(trimmedAbbreviation, inGroup: groupID), taken {
                 errorMessage = "Dieses Kürzel ist schon vergeben."
                 return
@@ -220,6 +240,17 @@ struct SettingsView: View {
         }
 
         try? await userRepository.updateUser(id: currentUser.id, name: trimmedName, abbreviation: trimmedAbbreviation)
+        onCurrentUserUpdated(currentUser)
+    }
+
+    private func submitAdminCode() async {
+        adminCodeError = nil
+        guard AdminCode.matches(adminCode) else {
+            adminCodeError = "Falscher Code."
+            return
+        }
+        try? await userRepository.setRole(id: currentUser.id, role: .admin)
+        adminCode = ""
         onCurrentUserUpdated(currentUser)
     }
 }

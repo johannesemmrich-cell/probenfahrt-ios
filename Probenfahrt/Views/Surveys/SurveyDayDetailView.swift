@@ -8,6 +8,7 @@ struct SurveyDayDetailView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(AdminPreviewStore.self) private var adminPreview
+    @Environment(DevModeStore.self) private var devMode
 
     @State private var entries: [SurveyEntry]
 
@@ -20,7 +21,7 @@ struct SurveyDayDetailView: View {
         _entries = State(initialValue: row.entries)
     }
 
-    private var isAdmin: Bool { isEffectiveAdmin(user: currentUser, adminPreview: adminPreview) }
+    private var isAdmin: Bool { isEffectiveAdmin(user: currentUser, adminPreview: adminPreview, devMode: devMode) }
 
     private var signedInUserIDs: Set<UUID> {
         Set(entries.compactMap(\.userID))

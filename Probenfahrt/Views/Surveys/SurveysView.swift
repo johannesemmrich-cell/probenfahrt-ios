@@ -29,7 +29,7 @@ struct SurveysView: View {
                             }
                         }
                     } header: {
-                        fahrplanHeader(for: block, isCurrent: index == 0)
+                        FahrplanHeader(block: block, isCurrent: index == 0)
                     }
                 }
             }
@@ -44,21 +44,6 @@ struct SurveysView: View {
             }
             .task { await load() }
             .refreshable { await load() }
-        }
-    }
-
-    private func fahrplanHeader(for block: SurveyWeekWindow.WeekBlock, isCurrent: Bool) -> some View {
-        HStack {
-            Text("Fahrplan vom \(block.weekStart.formatted(.dateTime.weekday(.wide).day().month().locale(.app))) bis \(block.weekEnd.formatted(.dateTime.weekday(.wide).day().month().locale(.app)))")
-            if isCurrent {
-                Spacer()
-                Text("Aktuell")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Capsule().fill(Color.accentColor))
-            }
         }
     }
 

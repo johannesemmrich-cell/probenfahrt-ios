@@ -10,41 +10,87 @@ struct EffectiveAdminTests {
         User(name: "Test Nutzer", abbreviation: "TN", role: role)
     }
 
-    /// `AdminPreviewStore` persists to shared `UserDefaults.standard` — on a
-    /// device/simulator where the real app (or a UI test) has also run, its
-    /// on-disk value can leak in. Force the deterministic value these tests
-    /// need instead of trusting whatever ended up on disk.
-    private func adminPreview(enabled: Bool) -> AdminPreviewStore {
+    /// `AdminPreviewStore`/`DevModeStore` persist to shared
+    /// `UserDefaults.standard` — on a device/simulator where the real app
+    /// (or a UI test) has also run, their on-disk values can leak in. Force
+    /// the deterministic values these tests need instead of trusting
+    /// whatever ended up on disk.
+    private func adminPreview(enabled: Bool = false) -> AdminPreviewStore {
         let store = AdminPreviewStore()
         store.isEnabled = enabled
         return store
     }
 
+    private func devMode(adminPreviewActive: Bool = false) -> DevModeStore {
+        let store = DevModeStore()
+        store.isAdminPreviewActive = adminPreviewActive
+        return store
+    }
+
+    // MARK: — isEffectiveAdmin / isFullAdmin
+
+    @Test func memberIsNeitherEffectiveNorFullAdmin() {
+        let member = makeUser(role: .member)
+        #expect(!isEffectiveAdmin(user: member, adminPreview: adminPreview(), devMode: devMode()))
+        #expect(!isFullAdmin(user: member, adminPreview: adminPreview(), devMode: devMode()))
+    }
+
+    @Test func viceAdminIsEffectiveButNotFullAdmin() {
+        let viceAdmin = makeUser(role: .viceAdmin)
+        #expect(isEffectiveAdmin(user: viceAdmin, adminPreview: adminPreview(), devMode: devMode()))
+        #expect(!isFullAdmin(user: viceAdmin, adminPreview: adminPreview(), devMode: devMode()))
+    }
+
+    @Test func hauptAdminIsBothEffectiveAndFullAdmin() {
+        let admin = makeUser(role: .admin)
+        #expect(isEffectiveAdmin(user: admin, adminPreview: adminPreview(), devMode: devMode()))
+        #expect(isFullAdmin(user: admin, adminPreview: adminPreview(), devMode: devMode()))
+    }
+
+    @Test func adminPreviewOverrideGrantsFullAdminToMember() {
+        let member = makeUser(role: .member)
+        #expect(isFullAdmin(user: member, adminPreview: adminPreview(enabled: true), devMode: devMode()))
+    }
+
+    @Test func devModeAdminPreviewOverrideGrantsFullAdminToMember() {
+        let member = makeUser(role: .member)
+        #expect(isFullAdmin(user: member, adminPreview: adminPreview(), devMode: devMode(adminPreviewActive: true)))
+    }
+
+    // MARK: — canEditSurveyDay
+
     @Test func memberCanEditFutureDay() {
         let tomorrow = calendar.date(byAdding: .day, value: 1, to: .now)!
         let day = SurveyDay(date: tomorrow, groupID: nil)
         let member = makeUser(role: .member)
-        #expect(canEditSurveyDay(day, user: member, adminPreview: adminPreview(enabled: false), calendar: calendar))
+        #expect(canEditSurveyDay(day, user: member, adminPreview: adminPreview(), devMode: devMode(), calendar: calendar))
     }
 
     @Test func memberCannotEditPastDay() {
         let yesterday = calendar.date(byAdding: .day, value: -1, to: .now)!
         let day = SurveyDay(date: yesterday, groupID: nil)
         let member = makeUser(role: .member)
-        #expect(!canEditSurveyDay(day, user: member, adminPreview: adminPreview(enabled: false), calendar: calendar))
+        #expect(!canEditSurveyDay(day, user: member, adminPreview: adminPreview(), devMode: devMode(), calendar: calendar))
     }
 
     @Test func memberCanEditToday() {
         let day = SurveyDay(date: .now, groupID: nil)
         let member = makeUser(role: .member)
-        #expect(canEditSurveyDay(day, user: member, adminPreview: adminPreview(enabled: false), calendar: calendar))
+        #expect(canEditSurveyDay(day, user: member, adminPreview: adminPreview(), devMode: devMode(), calendar: calendar))
     }
 
-    @Test func adminCanEditPastDay() {
+    @Test func hauptAdminCanEditPastDay() {
         let yesterday = calendar.date(byAdding: .day, value: -1, to: .now)!
         let day = SurveyDay(date: yesterday, groupID: nil)
         let admin = makeUser(role: .admin)
-        #expect(canEditSurveyDay(day, user: admin, adminPreview: adminPreview(enabled: false), calendar: calendar))
+        #expect(canEditSurveyDay(day, user: admin, adminPreview: adminPreview(), devMode: devMode(), calendar: calendar))
+    }
+
+    @Test func viceAdminCanEditPastDay() {
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: .now)!
+        let day = SurveyDay(date: yesterday, groupID: nil)
+        let viceAdmin = makeUser(role: .viceAdmin)
+        #expect(canEditSurveyDay(day, user: viceAdmin, adminPreview: adminPreview(), devMode: devMode(), calendar: calendar))
     }
 
     // MARK: — shouldShowQuickToggle
@@ -53,33 +99,40 @@ struct EffectiveAdminTests {
         let tomorrow = calendar.date(byAdding: .day, value: 1, to: .now)!
         let day = SurveyDay(date: tomorrow, groupID: nil)
         let member = makeUser(role: .member)
-        #expect(shouldShowQuickToggle(for: day, user: member, adminPreview: adminPreview(enabled: false), calendar: calendar))
+        #expect(shouldShowQuickToggle(for: day, user: member, adminPreview: adminPreview(), devMode: devMode(), calendar: calendar))
     }
 
     @Test func memberNeverSeesQuickToggleOnPastDay() {
         let yesterday = calendar.date(byAdding: .day, value: -1, to: .now)!
         let day = SurveyDay(date: yesterday, groupID: nil)
         let member = makeUser(role: .member)
-        #expect(!shouldShowQuickToggle(for: day, user: member, adminPreview: adminPreview(enabled: false), calendar: calendar))
+        #expect(!shouldShowQuickToggle(for: day, user: member, adminPreview: adminPreview(), devMode: devMode(), calendar: calendar))
     }
 
-    @Test func adminSeesQuickToggleOnFutureDay() {
+    @Test func hauptAdminSeesQuickToggleOnFutureDay() {
         let tomorrow = calendar.date(byAdding: .day, value: 1, to: .now)!
         let day = SurveyDay(date: tomorrow, groupID: nil)
         let admin = makeUser(role: .admin)
-        #expect(shouldShowQuickToggle(for: day, user: admin, adminPreview: adminPreview(enabled: false), calendar: calendar))
+        #expect(shouldShowQuickToggle(for: day, user: admin, adminPreview: adminPreview(), devMode: devMode(), calendar: calendar))
     }
 
-    @Test func adminDoesNotSeeQuickToggleOnPastDay() {
+    @Test func hauptAdminDoesNotSeeQuickToggleOnPastDay() {
         let yesterday = calendar.date(byAdding: .day, value: -1, to: .now)!
         let day = SurveyDay(date: yesterday, groupID: nil)
         let admin = makeUser(role: .admin)
-        #expect(!shouldShowQuickToggle(for: day, user: admin, adminPreview: adminPreview(enabled: false), calendar: calendar))
+        #expect(!shouldShowQuickToggle(for: day, user: admin, adminPreview: adminPreview(), devMode: devMode(), calendar: calendar))
     }
 
-    @Test func adminSeesQuickToggleOnToday() {
+    @Test func viceAdminDoesNotSeeQuickToggleOnPastDay() {
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: .now)!
+        let day = SurveyDay(date: yesterday, groupID: nil)
+        let viceAdmin = makeUser(role: .viceAdmin)
+        #expect(!shouldShowQuickToggle(for: day, user: viceAdmin, adminPreview: adminPreview(), devMode: devMode(), calendar: calendar))
+    }
+
+    @Test func hauptAdminSeesQuickToggleOnToday() {
         let day = SurveyDay(date: .now, groupID: nil)
         let admin = makeUser(role: .admin)
-        #expect(shouldShowQuickToggle(for: day, user: admin, adminPreview: adminPreview(enabled: false), calendar: calendar))
+        #expect(shouldShowQuickToggle(for: day, user: admin, adminPreview: adminPreview(), devMode: devMode(), calendar: calendar))
     }
 }

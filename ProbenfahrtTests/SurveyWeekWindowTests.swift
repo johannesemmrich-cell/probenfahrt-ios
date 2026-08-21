@@ -94,36 +94,55 @@ struct SurveyWeekWindowTests {
         #expect(blocks[0].weekStart == calendar.startOfDay(for: monday))
     }
 
-    // MARK: — pastRange (PastSurveysView boundary)
+    // MARK: — pastWeekBlocks (PastSurveysView grouping)
 
-    @Test func pastRangeEndsExactlyOneDayBeforeCurrentBlocksStart() {
+    @Test func pastWeekBlocksReturnsExactlyWeeksBackBlocks() {
         for offset in 0..<14 {
             let reference = calendar.date(byAdding: .day, value: offset, to: .now)!
-            let range = SurveyWeekWindow.pastRange(from: reference, calendar: calendar)!
-            let blocks = SurveyWeekWindow.currentWeekBlocks(from: reference, calendar: calendar)
-            let expectedEnd = calendar.date(byAdding: .day, value: -1, to: blocks[0].weekStart)!
-            #expect(range.end == expectedEnd)
-            #expect(range.start < range.end)
+            let blocks = SurveyWeekWindow.pastWeekBlocks(from: reference, calendar: calendar, weeksBack: 8)
+            #expect(blocks.count == 8)
         }
     }
 
-    @Test func pastRangeSpansExactlyTheRequestedLookbackDays() {
+    @Test func pastWeekBlocksAreEachValidMondayThroughThursdayWeeks() {
         for offset in 0..<14 {
             let reference = calendar.date(byAdding: .day, value: offset, to: .now)!
-            let range = SurveyWeekWindow.pastRange(from: reference, calendar: calendar, lookbackDays: 56)!
-            // start = anchor - 56, end = anchor - 1, so end - start == 55 days.
-            let daysBetween = calendar.dateComponents([.day], from: range.start, to: range.end).day!
-            #expect(daysBetween == 55)
-        }
-    }
-
-    @Test func pastRangeNeverOverlapsCurrentWeekBlocks() {
-        for offset in 0..<14 {
-            let reference = calendar.date(byAdding: .day, value: offset, to: .now)!
-            let range = SurveyWeekWindow.pastRange(from: reference, calendar: calendar)!
-            let blocks = SurveyWeekWindow.currentWeekBlocks(from: reference, calendar: calendar)
+            let blocks = SurveyWeekWindow.pastWeekBlocks(from: reference, calendar: calendar)
             for block in blocks {
-                #expect(range.end < block.weekStart)
+                #expect(block.days.count == 4)
+                #expect(block.weekStart == block.days.first)
+                #expect(block.weekEnd == block.days.last)
+                for date in block.days {
+                    #expect((2...5).contains(calendar.component(.weekday, from: date)))
+                }
+            }
+        }
+    }
+
+    @Test func pastWeekBlocksAreOrderedMostRecentFirstWithNoGapBetweenConsecutiveWeeks() {
+        for offset in 0..<14 {
+            let reference = calendar.date(byAdding: .day, value: offset, to: .now)!
+            let blocks = SurveyWeekWindow.pastWeekBlocks(from: reference, calendar: calendar)
+            for i in 0..<(blocks.count - 1) {
+                let expectedNext = calendar.date(byAdding: .day, value: -7, to: blocks[i].weekStart)!
+                #expect(blocks[i + 1].weekStart == expectedNext)
+            }
+        }
+    }
+
+    @Test func pastWeekBlocksNeverOverlapOrGapAgainstCurrentWeekBlocks() {
+        for offset in 0..<14 {
+            let reference = calendar.date(byAdding: .day, value: offset, to: .now)!
+            let pastBlocks = SurveyWeekWindow.pastWeekBlocks(from: reference, calendar: calendar)
+            let currentBlocks = SurveyWeekWindow.currentWeekBlocks(from: reference, calendar: calendar)
+            // The most recent past week is exactly the calendar week
+            // immediately before the current anchor week — no skipped or
+            // duplicated week in between (Fri–Sun aren't survey days, so a
+            // gap there is expected and not what this checks).
+            let expectedNewestPastWeekStart = calendar.date(byAdding: .day, value: -7, to: currentBlocks[0].weekStart)!
+            #expect(pastBlocks[0].weekStart == expectedNewestPastWeekStart)
+            for block in pastBlocks {
+                #expect(block.weekEnd < currentBlocks[0].weekStart)
             }
         }
     }

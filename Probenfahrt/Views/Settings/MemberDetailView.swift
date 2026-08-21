@@ -13,6 +13,8 @@ struct MemberDetailView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Environment(AdminPreviewStore.self) private var adminPreview
+    @Environment(DevModeStore.self) private var devMode
 
     @State private var abbreviation: String
     @State private var errorMessage: String?
@@ -23,6 +25,8 @@ struct MemberDetailView: View {
 
     private var userRepository: UserRepository { SwiftDataUserRepository(context: modelContext) }
     private var surveyRepository: SurveyRepository { SwiftDataSurveyRepository(context: modelContext) }
+
+    private var isFullAdmin: Bool { Probenfahrt.isFullAdmin(user: currentUser, adminPreview: adminPreview, devMode: devMode) }
 
     init(user: User, currentUser: User, onRemoved: @escaping () -> Void) {
         self.user = user
@@ -53,14 +57,19 @@ struct MemberDetailView: View {
         Form {
             Section("Profil") {
                 LabeledContent("Name", value: user.name)
-                TextField("Kürzel", text: $abbreviation)
-                    .textInputAutocapitalization(.characters)
-                    .autocorrectionDisabled()
-                    .onSubmit { Task { await saveAbbreviation() } }
+                if isFullAdmin {
+                    TextField("Kürzel", text: $abbreviation)
+                        .textInputAutocapitalization(.characters)
+                        .autocorrectionDisabled()
+                        .onSubmit { Task { await saveAbbreviation() } }
+                } else {
+                    LabeledContent("Kürzel", value: user.abbreviation)
+                }
                 if let errorMessage {
                     Text(errorMessage).font(.footnote).foregroundStyle(.red)
                 }
                 LabeledContent("Beigetreten am", value: user.createdAt.formatted(.dateTime.day().month().year().locale(.app)))
+                LabeledContent("Rolle", value: roleLabel)
             }
 
             Section("Fahrten") {
@@ -86,7 +95,18 @@ struct MemberDetailView: View {
                 )
             }
 
-            if user.id != currentUser.id {
+            if isFullAdmin, user.id != currentUser.id, user.role != .admin {
+                Section {
+                    Toggle("Vice-Admin", isOn: Binding(
+                        get: { user.role == .viceAdmin },
+                        set: { newValue in Task { await setViceAdmin(newValue) } }
+                    ))
+                } footer: {
+                    Text("Vice-Admin kann fast alles, was ein Admin kann — außer Mitglieder entfernen oder Kürzel ändern.")
+                }
+            }
+
+            if isFullAdmin, user.id != currentUser.id {
                 Section {
                     Button("Aus Gruppe entfernen", role: .destructive) {
                         isShowingRemoveConfirmation = true
@@ -106,6 +126,14 @@ struct MemberDetailView: View {
         ) {
             Button("Entfernen", role: .destructive) { Task { await remove() } }
             Button("Abbrechen", role: .cancel) {}
+        }
+    }
+
+    private var roleLabel: String {
+        switch user.role {
+        case .admin: return "Haupt-Admin"
+        case .viceAdmin: return "Vice-Admin"
+        case .member: return "Mitglied"
         }
     }
 
@@ -137,6 +165,10 @@ struct MemberDetailView: View {
             }
         }
         try? await userRepository.updateUser(id: user.id, name: user.name, abbreviation: trimmed)
+    }
+
+    private func setViceAdmin(_ isOn: Bool) async {
+        try? await userRepository.setRole(id: user.id, role: isOn ? .viceAdmin : .member)
     }
 
     private func remove() async {

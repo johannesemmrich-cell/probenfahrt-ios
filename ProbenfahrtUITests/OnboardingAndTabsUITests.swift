@@ -93,6 +93,14 @@ final class OnboardingAndTabsUITests: XCTestCase {
 
         tabBar.buttons["Umfragen"].tap()
         XCTAssertTrue(app.navigationBars["Umfragen"].waitForExistence(timeout: 5))
+
+        // Vergangene Umfragen render as the same "Fahrplan vom...bis..."
+        // week blocks as the 2 aktuell blocks, just further back.
+        app.buttons["Vergangen"].tap()
+        XCTAssertTrue(app.navigationBars["Vergangene Umfragen"].waitForExistence(timeout: 5))
+        let fahrplanHeader = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Fahrplan vom")).firstMatch
+        XCTAssertTrue(fahrplanHeader.waitForExistence(timeout: 5))
+        snap(app, "9-vergangene-umfragen")
     }
 
     private func snap(_ app: XCUIApplication, _ name: String) {

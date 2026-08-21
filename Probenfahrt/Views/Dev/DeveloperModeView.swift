@@ -87,6 +87,28 @@ struct DeveloperModeView: View {
                     .foregroundStyle(.green)
             }
 
+            Section {
+                Toggle("Alle Admin-Rechte (Haupt-Admin)", isOn: Binding(
+                    get: { devMode.isAdminPreviewActive },
+                    set: { devMode.isAdminPreviewActive = $0 }
+                ))
+            } footer: {
+                Text("Zeigt überall volle Haupt-Admin-Rechte, unabhängig von der echten Rolle — Ersatz für den Toggle \"Als Admin anzeigen\" in den Einstellungen, der irgendwann entfernt wird.")
+            }
+
+            Section("Haupt-Admin-Rechte (zusätzlich zu Vice-Admin)") {
+                Label("Mitglieder aus der Gruppe entfernen", systemImage: "person.fill.xmark")
+                Label("Kürzel von Mitgliedern ändern (auch das eigene)", systemImage: "pencil")
+                Label("Mitglieder zu Vice-Admin machen oder zurückstufen", systemImage: "arrow.up.arrow.down.circle")
+            }
+
+            Section("Vice-Admin-Rechte") {
+                Label("Umfrage-Teilnehmer ein-/austragen — auch für andere, auch an vergangenen Tagen", systemImage: "person.2.badge.gearshape")
+                Label("Umfrage-Tage sperren/entsperren", systemImage: "lock")
+                Label("Monatsauswertung (PDF) exportieren", systemImage: "doc.text")
+                Label("Mitgliederliste, Beitrittsdatum & Fahrten-Statistiken einsehen", systemImage: "list.bullet")
+            }
+
             let inProgressItems = todoItems.filter { InProgressStore.isInProgress($0.id) && !$0.isCompleted }
             let openItems = todoItems.filter { !InProgressStore.isInProgress($0.id) && !$0.isCompleted }
             let doneItems = todoItems.filter { $0.isCompleted }

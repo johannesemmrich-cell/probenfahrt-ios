@@ -23,8 +23,9 @@ struct PharmacySamplesView: View {
                 Spacer()
 
                 Text(Date.now.formatted(.dateTime.weekday(.wide).day().month().year().locale(.app)))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.center)
 
                 Text("Habt ihr heute Proben?")
                     .font(.title2.bold())

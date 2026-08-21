@@ -7,6 +7,7 @@ struct SurveyDayCard: View {
     let onToggle: () async -> Void
 
     @Environment(AdminPreviewStore.self) private var adminPreview
+    @Environment(DevModeStore.self) private var devMode
 
     private var isSignedIn: Bool {
         row.entries.contains { $0.userID == currentUser.id }
@@ -55,7 +56,7 @@ struct SurveyDayCard: View {
             Spacer()
 
             if !row.day.isLocked {
-                if shouldShowQuickToggle(for: row.day, user: currentUser, adminPreview: adminPreview) {
+                if shouldShowQuickToggle(for: row.day, user: currentUser, adminPreview: adminPreview, devMode: devMode) {
                     Button {
                         Task { await onToggle() }
                     } label: {
@@ -63,7 +64,7 @@ struct SurveyDayCard: View {
                     }
                     .buttonStyle(.bordered)
                     .tint(isSignedIn ? .red : .accentColor)
-                } else if isEffectiveAdmin(user: currentUser, adminPreview: adminPreview) {
+                } else if isEffectiveAdmin(user: currentUser, adminPreview: adminPreview, devMode: devMode) {
                     NavigationLink {
                         SurveyDayDetailView(row: row, users: users, currentUser: currentUser)
                     } label: {

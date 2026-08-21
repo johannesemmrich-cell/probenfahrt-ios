@@ -72,10 +72,17 @@ Account man bekommt:
   Standard-Laborteam-Account (wiederverwendbarer Testnutzer "Entwickler",
   Kürzel `DEV`) mit bereits aktivem Entwicklermodus. Funktioniert nur,
   solange es die zwei Demo-Codes oben gibt.
+- **Haupt-Admin-Code:** Ganz unten in den Einstellungen (nur Laborteam-
+  Accounts, die noch nicht Haupt-Admin sind) gibt es ein Code-Feld — Code
+  `Admin` eingeben schaltet den eigenen Account dauerhaft auf Haupt-Admin
+  frei (echte, persistierte Rollenänderung, kein Preview-Toggle). Bewusst
+  einfach/im Klartext für diesen Prototyp-Stand.
 - **Admin-Vorschau:** In den Einstellungen (nur Laborteam-Accounts) gibt es
   einen klar markierten Dev-Toggle "Als Admin anzeigen" — jeder frisch
   onboardete Testnutzer ist regulär "member", kann sich damit aber die
-  Admin-Ansichten anschauen.
+  Admin-Ansichten anschauen. Im Entwicklermodus (siehe unten) gibt es
+  zusätzlich einen gleichwertigen Toggle "Alle Admin-Rechte", der diesen
+  Preview-Toggle ersetzen soll, sobald er selbst entfernt wird.
 - **Entwicklermodus (Feedback/To-Do):** 5x auf die Versionsnummer unten in
   den Einstellungen tippen, Passwort `Isg#45krusgL.` eingeben. Zeigt danach
   ein 👎-Feedback-Overlay auf allen Tabs und einen Feedback-/To-Do-
@@ -90,6 +97,10 @@ Account man bekommt:
     unter dem eigenen Namen an; sobald beide Vorschau-Schalter wieder aus
     sind, wird dieser Testeintrag automatisch gelöscht (sonst bliebe er
     dauerhaft und für das ganze Team sichtbar im echten Proben-Tab stehen).
+  - Toggle "Alle Admin-Rechte (Haupt-Admin)" — wie "Als Admin anzeigen" in
+    den Einstellungen, nur innerhalb des Entwicklermodus statt daneben.
+  - Zwei Übersichts-Sections listen alle Haupt-Admin- und alle
+    Vice-Admin-Rechte auf.
 - **Über/Datenschutz + Emmrich-Banner:** In den Einstellungen gibt es einen
   "Über"-Bereich (Über Probenfahrt, Datenschutz) sowie ganz unten das
   "Mehr von Emmrich"-Banner (verlinkt auf emmrich-business.com) — analog
@@ -143,10 +154,26 @@ einer sinnvollen Annahme beantwortet werden.
   "Vergangene Umfragen" (für alle sichtbar, aber nur Admin kann dort noch
   etwas ändern — sobald das Datum eines Umfrage-Tags in der Vergangenheit
   liegt, gilt das auch innerhalb der 2 aktuellen Blöcke, z. B. für Mo/Di
-  einer noch laufenden Woche, wenn heute Mittwoch ist). Umfrage-Tage werden
-  weiterhin bei Bedarf automatisch angelegt, nicht fest vorab erzeugt.
+  einer noch laufenden Woche, wenn heute Mittwoch ist). "Vergangene
+  Umfragen" gruppiert ebenfalls in "Fahrplan vom...bis..."-Wochenblöcke
+  (bis zu 8 Wochen zurück, neueste zuerst) statt einer flachen Liste —
+  gleiche Optik wie die 2 aktuellen Blöcke, nur ohne "Aktuell"-Badge.
+  Umfrage-Tage werden weiterhin bei Bedarf automatisch angelegt, nicht
+  fest vorab erzeugt.
   Kalender/vergangene Umfragen lesen nur bestehende Tage, ohne welche
   anzulegen.
+- **Dreistufiges Rollensystem: Haupt-Admin, Vice-Admin, Mitglied**:
+  `UserRole` hat jetzt `.admin` (Haupt-Admin), `.viceAdmin` und `.member`.
+  `isEffectiveAdmin` ist true für beide Admin-Stufen (steuert z. B.
+  Umfragen-Verwaltung, PDF-Export, Sichtbarkeit von "Mitglieder verwalten");
+  `isFullAdmin` nur für Haupt-Admin (steuert exakt 3 Dinge: Mitglieder
+  entfernen, Kürzel ändern, Vice-Admin ernennen/zurückstufen — über einen
+  Regler in "Mitglieder verwalten"). Beide Preview-Overrides ("Als Admin
+  anzeigen" und der neue Dev-Mode-Toggle) zählen für `isFullAdmin`, nicht
+  nur für `isEffectiveAdmin` — sie sollen weiterhin volle Admin-Vorschau
+  bleiben, nicht nur Vice-Admin-Vorschau. `UserRepository.setRole`/
+  `deleteUser` weigern sich, den letzten Haupt-Admin einer Gruppe zu
+  entfernen oder zurückzustufen (gleicher Schutz wie beim Entfernen).
 - **Admin verwaltet vergangene Tage über "Verwalten" statt Eintragen-Knopf**:
   Sobald ein Umfrage-Tag in der Vergangenheit liegt, verschwindet der
   einfache Eintragen/Austragen-Knopf auch für Admins — stattdessen führt ein
@@ -172,7 +199,7 @@ einer sinnvollen Annahme beantwortet werden.
   unabhängig von der Geräte-/Simulator-Spracheinstellung.
 - **Verifikation**: Build, Unit-Tests (Swift Testing) und ein XCUITest, der
   den kompletten Klickpfad (Onboarding, alle 5 Tabs, Admin-Vorschau-Toggle,
-  Über/Datenschutz/Emmrich-Banner) durchspielt, laufen grün. Zusätzlich per
+  Über/Datenschutz/Emmrich-Banner, Vergangene Umfragen) durchspielt, laufen grün. Zusätzlich per
   Screenshot aus den Testläufen visuell geprüft (u. a. dabei zwei echte Bugs
   gefunden und behoben: fehlende Locale-Erzwingung bei Datumsanzeigen und
   ein Scroll-Glitch im Chat bei kurzen Konversationen). Der neue Apotheken-

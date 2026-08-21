@@ -34,6 +34,10 @@ struct TeamMembersView: View {
                             Text("Admin")
                                 .font(.caption2.weight(.semibold))
                                 .foregroundStyle(.secondary)
+                        } else if user.role == .viceAdmin {
+                            Text("Vice-Admin")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }

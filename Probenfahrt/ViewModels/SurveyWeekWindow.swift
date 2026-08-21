@@ -37,15 +37,21 @@ enum SurveyWeekWindow {
         return calendar.date(byAdding: .day, value: 7, to: thisMonday)
     }
 
-    /// The date range PastSurveysView reads: everything before the current
-    /// Umfragen anchor, back to a bounded lookback window. Never overlaps
-    /// and never gaps with `currentWeekBlocks`' first block — `end` is
-    /// always exactly one day before that block's `weekStart`.
-    static func pastRange(from referenceDate: Date, calendar: Calendar = .current, lookbackDays: Int = 56) -> (start: Date, end: Date)? {
-        guard let anchor = currentAnchorMonday(from: referenceDate, calendar: calendar),
-              let end = calendar.date(byAdding: .day, value: -1, to: anchor),
-              let start = calendar.date(byAdding: .day, value: -lookbackDays, to: anchor) else { return nil }
-        return (start, end)
+    /// Past Mon–Thu week blocks, most-recent-first, strictly before the
+    /// current Umfragen anchor — same `WeekBlock` shape as
+    /// `currentWeekBlocks`, so PastSurveysView can render vergangene
+    /// Umfragen as the same kind of "Fahrplan"-grouped blocks. Never
+    /// overlaps and never gaps with `currentWeekBlocks`' first block: the
+    /// newest past block's `weekEnd` is always exactly one day before that
+    /// block's `weekStart`.
+    static func pastWeekBlocks(from referenceDate: Date, calendar: Calendar = .current, weeksBack: Int = 8) -> [WeekBlock] {
+        guard let anchor = currentAnchorMonday(from: referenceDate, calendar: calendar) else { return [] }
+        return (1...weeksBack).compactMap { weeksAgo -> WeekBlock? in
+            guard let weekStart = calendar.date(byAdding: .day, value: -7 * weeksAgo, to: anchor) else { return nil }
+            let days = (0..<4).compactMap { calendar.date(byAdding: .day, value: $0, to: weekStart) }
+            guard let weekEnd = days.last else { return nil }
+            return WeekBlock(weekStart: weekStart, weekEnd: weekEnd, days: days)
+        }
     }
 
     /// Start of the Monday of the calendar week containing `date`.
