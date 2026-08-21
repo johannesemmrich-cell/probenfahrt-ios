@@ -19,9 +19,9 @@ SwiftData), kein echtes Backend/keine echte Mehrbenutzer-Synchronisierung
   erfüllen, ohne dass UI-Code angefasst werden muss.
 - Keine Third-Party-Dependencies (kein SPM-Paket nötig: PDF-Export läuft
   über `UIGraphicsPDFRenderer`, kein Router/State-Management-Package nötig)
-- Swift Testing für die Kern-Businesslogik (Datums-/Wochenfenster-Berechnung,
-  Monats-Auswertung), XCUITest für den kompletten Klickpfad (Onboarding →
-  alle 5 Tabs)
+- Swift Testing für die Kern-Businesslogik (Datums-/Wochenfenster-Berechnung
+  inkl. Freitags-Rollover, Editier-Rechte, Monats-/Mitglieder-Auswertung),
+  XCUITest für den kompletten Klickpfad (Onboarding → alle 5 Tabs)
 - Projekt-Generierung über [XcodeGen](https://github.com/yonaskolb/XcodeGen):
   `project.yml` ist die Quelle der Wahrheit, `Probenfahrt.xcodeproj` wird
   generiert und ist **nicht** eingecheckt (siehe `.gitignore`)
@@ -56,13 +56,44 @@ geprüft (auch mit deaktiviertem "Debug executable" trat es weiter auf).
 
 ## Test-Zugänge (Mock-Daten)
 
-- **Gruppen-Beitrittscode:** `LABOR2026` ("Laborteam Nord", ~10 simulierte
-  Testnutzer, u.a. "Johannes Emmrich" als Admin)
-- **Proben-Tab-Freischaltcode:** `PROBEN2026` (einfacher simulierter Check,
-  siehe Backlog #1)
-- **Admin-Vorschau:** In den Einstellungen gibt es einen klar markierten
-  Dev-Toggle "Als Admin anzeigen" — jeder frisch onboardete Testnutzer ist
-  regulär "member", kann sich damit aber die Admin-Ansichten anschauen.
+Im Onboarding wird zuerst der Code abgefragt — er entscheidet, welchen
+Account man bekommt:
+
+- **`LABOR2026`** → normaler Laborteam-Account (Name + Kürzel, alle 5 Tabs).
+  Seed-Daten: "Laborteam Nord", ~10 simulierte Testnutzer, u. a.
+  "Johannes Emmrich" als Admin.
+- **`PROBEN2026`** → Apotheken-/Zulieferer-Account: Statt Name/Kürzel wird
+  nur ein Apotheken-/Firmenname abgefragt. Dieser Account bekommt nur 2 Tabs
+  (Proben, Einstellungen); im Proben-Tab gibt's ausschließlich die Auswahl
+  "Ja, wir haben Proben" / "Keine Proben" für heute — das Ergebnis erscheint
+  dann im normalen Proben-Tab des Laborteams.
+- **Entwicklermodus-Bypass im Onboarding:** Statt eines Beitrittscodes das
+  Dev-Mode-Passwort (`Isg#45krusgL.`) eingeben → man landet direkt im
+  Standard-Laborteam-Account (wiederverwendbarer Testnutzer "Entwickler",
+  Kürzel `DEV`) mit bereits aktivem Entwicklermodus. Funktioniert nur,
+  solange es die zwei Demo-Codes oben gibt.
+- **Admin-Vorschau:** In den Einstellungen (nur Laborteam-Accounts) gibt es
+  einen klar markierten Dev-Toggle "Als Admin anzeigen" — jeder frisch
+  onboardete Testnutzer ist regulär "member", kann sich damit aber die
+  Admin-Ansichten anschauen.
+- **Entwicklermodus (Feedback/To-Do):** 5x auf die Versionsnummer unten in
+  den Einstellungen tippen, Passwort `Isg#45krusgL.` eingeben. Zeigt danach
+  ein 👎-Feedback-Overlay auf allen Tabs und einen Feedback-/To-Do-
+  Bereich in den Einstellungen (analog zu Sunwakes Entwicklermodus). Bei
+  aktivem Entwicklermodus gibt's zusätzlich in "Entwicklung":
+  - Toggle "Proben-Tab (Apotheke) als Extra-Tab" — blendet die
+    Apotheken-Proben-Ansicht als 6. Tab ein, ohne den Account-Typ zu wechseln.
+  - Button "Zu Apotheken-Modus wechseln" — schaltet die komplette App
+    (Tabs + Einstellungen) probeweise auf die 2-Tab-Apotheken-Ansicht um;
+    ein gleichwertiger Button schaltet von dort wieder zurück.
+  - Beide Vorschauen legen dafür einen eigenen `SampleLocation`-Testeintrag
+    unter dem eigenen Namen an; sobald beide Vorschau-Schalter wieder aus
+    sind, wird dieser Testeintrag automatisch gelöscht (sonst bliebe er
+    dauerhaft und für das ganze Team sichtbar im echten Proben-Tab stehen).
+- **Über/Datenschutz + Emmrich-Banner:** In den Einstellungen gibt es einen
+  "Über"-Bereich (Über Probenfahrt, Datenschutz) sowie ganz unten das
+  "Mehr von Emmrich"-Banner (verlinkt auf emmrich-business.com) — analog
+  zu Sunwakes Einstellungen, mit den fixen Emmrich-Markenfarben.
 
 ## Annahmen
 
@@ -85,27 +116,65 @@ einer sinnvollen Annahme beantwortet werden.
   nur simulierte Mock-Daten, kein echtes Backend. Lokale SwiftData-
   Persistenz ohne Sync erfüllt das; CloudKit- oder Supabase/Firebase-Sync
   ist Backlog #3.
-- **Onboarding-Reihenfolge**: Name/Kürzel wird zuerst erfasst, aber erst
-  geprüft, sobald der Gruppencode die Gruppe auflöst (Kürzel-Eindeutigkeit
-  ist von Anfang an pro Gruppe geprüft, nicht global — auch wenn aktuell
-  nur eine Gruppe existiert). Bei Konflikt geht es mit Fehlermeldung zurück
-  zum Namens-Schritt, ohne dass Name/Kürzel neu eingegeben werden müssen.
-- **Proben-Tab-Freischaltung bleibt pro Gerät bestehen**: Einmal korrekt
-  eingegeben, muss der Code nicht bei jedem Tab-Wechsel neu eingegeben
-  werden (lokal in UserDefaults gemerkt).
-- **Rollierendes Umfragen-Fenster**: Umfrage-Tage für die nächsten 2 Wochen
-  werden bei Bedarf automatisch angelegt (nicht fest vorab erzeugt), damit
-  das Fenster auch nach Wochen App-Nutzung ohne Hintergrund-Job korrekt
-  weiterrollt. Kalender/vergangene Umfragen lesen nur bestehende Tage,
-  ohne welche anzulegen.
+- **Onboarding-Reihenfolge**: Der Code wird zuerst erfasst, weil er
+  entscheidet, welcher Identitäts-Schritt danach kommt (Name+Kürzel fürs
+  Laborteam vs. nur Firmenname für Apotheken) — Kürzel-Eindeutigkeit wird
+  weiterhin pro Gruppe geprüft (nicht global, auch wenn aktuell nur eine
+  Gruppe existiert). Bei Konflikt geht es mit Fehlermeldung zurück zum
+  Code-Schritt.
+- **Zwei Account-Typen über zwei Join-Codes**: `AccountKind` (labTeam/
+  pharmacy) hängt am `User`, nicht an der Gruppe — beide Codes lösen zur
+  selben `TeamGroup` auf, nur der jeweils passende Code
+  (`joinCode`/`pharmacyJoinCode`) bestimmt den Account-Typ. So bleibt es
+  eine einzige Mock-Gruppe, ohne dass Apotheken und Laborteam getrennte
+  Datensilos bräuchten.
+- **Proben-Tab jetzt mit echter Interaktionslogik**: Apotheken-Accounts
+  haben eine eigene, an sie gebundene `SampleLocation`
+  (`ownerUserID`), die sie selbst per Ja/Nein-Auswahl für den aktuellen Tag
+  pflegen — damit ist die in Backlog früher offene "echte
+  Interaktionslogik" gelöst. Die alten, nicht an einen Account gebundenen
+  Mock-Standorte bleiben als zusätzliche Demo-Einträge bestehen.
+- **Umfragen als zwei Kalenderwochen-Blöcke mit Freitags-Rollover**:
+  "Fahrplan"-Block 1 = die "aktuelle" Kalenderwoche (Mo–Do), Block 2 = die
+  Woche danach — nicht mehr ein rollierendes 14-Tage-Fenster ab heute. Da
+  Mo–Do die einzigen Umfrage-Tage sind, gilt eine Woche ab Freitag als
+  durch: an Fr/Sa/So zeigen die 2 aktuellen Blöcke bereits die nächste
+  Woche + die Woche danach, und die gerade abgelaufene Woche rutscht in
+  "Vergangene Umfragen" (für alle sichtbar, aber nur Admin kann dort noch
+  etwas ändern — sobald das Datum eines Umfrage-Tags in der Vergangenheit
+  liegt, gilt das auch innerhalb der 2 aktuellen Blöcke, z. B. für Mo/Di
+  einer noch laufenden Woche, wenn heute Mittwoch ist). Umfrage-Tage werden
+  weiterhin bei Bedarf automatisch angelegt, nicht fest vorab erzeugt.
+  Kalender/vergangene Umfragen lesen nur bestehende Tage, ohne welche
+  anzulegen.
+- **Admin verwaltet vergangene Tage über "Verwalten" statt Eintragen-Knopf**:
+  Sobald ein Umfrage-Tag in der Vergangenheit liegt, verschwindet der
+  einfache Eintragen/Austragen-Knopf auch für Admins — stattdessen führt ein
+  "Verwalten"-Link in die Tagesansicht, in der Admins jede Person einzeln
+  ein-/austragen können (nicht nur sich selbst). Auf zukünftigen/heutigen
+  Tagen bleibt der normale Selbst-Eintragen-Knopf für alle unverändert.
+- **Kürzel nach dem Setzen fix**: Nur beim Onboarding frei wählbar; danach
+  kann ein normaler Nutzer sein eigenes Kürzel nicht mehr ändern — nur ein
+  Admin kann es über "Einstellungen → Admin → Mitglieder verwalten"
+  korrigieren. Dort sieht der Admin pro Person auch Beitrittsdatum,
+  Fahrten insgesamt sowie Fahrten pro Woche/Monat (mit Vor-/Zurück-
+  Navigation), und kann Personen aus der Gruppe entfernen — außer sich
+  selbst (verhindert einen versehentlichen Selbst-Lockout, da die Session
+  sonst auf einen gelöschten Nutzer zeigen würde) und außer dem letzten
+  verbleibenden Admin der Gruppe (sonst gäbe es niemanden mehr, der
+  Admin-Rechte vergeben könnte). Vergangene Fahrten bleiben beim Entfernen
+  erhalten (lose UUID-Referenz, kein Cascade-Delete — passt zum
+  bestehenden Muster bei SurveyEntry).
 - **Kalender-Optik**: volle 7-Tage-Woche (klassischer App-Kalender-Look),
   Fr/Sa/So bleiben aber immer leer/inaktiv, da die Spezifikation nur Mo–Do
   vorsieht.
 - **UI-Sprache immer Deutsch**: Datumsformatierung erzwingt `de_DE`
   unabhängig von der Geräte-/Simulator-Spracheinstellung.
 - **Verifikation**: Build, Unit-Tests (Swift Testing) und ein XCUITest, der
-  den kompletten Klickpfad (Onboarding, alle 5 Tabs, Proben-Freischaltung,
-  Admin-Vorschau-Toggle) durchspielt, laufen grün. Zusätzlich per Screenshot
-  aus den Testläufen visuell geprüft (u. a. dabei zwei echte Bugs gefunden
-  und behoben: fehlende Locale-Erzwingung bei Datumsanzeigen und ein
-  Scroll-Glitch im Chat bei kurzen Konversationen).
+  den kompletten Klickpfad (Onboarding, alle 5 Tabs, Admin-Vorschau-Toggle,
+  Über/Datenschutz/Emmrich-Banner) durchspielt, laufen grün. Zusätzlich per
+  Screenshot aus den Testläufen visuell geprüft (u. a. dabei zwei echte Bugs
+  gefunden und behoben: fehlende Locale-Erzwingung bei Datumsanzeigen und
+  ein Scroll-Glitch im Chat bei kurzen Konversationen). Der neue Apotheken-
+  Onboarding-Flow und die Mitglieder-Verwaltung sind aktuell nur durch
+  Unit-Tests der zugrundeliegenden Logik abgedeckt, nicht per XCUITest.

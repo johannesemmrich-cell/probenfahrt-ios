@@ -12,6 +12,10 @@ final class SampleLocation {
     var hasSamples: Bool = false
     var statusNote: String = ""
     var updatedAt: Date = Date.now
+    /// Set for locations self-managed by a pharmacy account (see
+    /// AccountKind.pharmacy) via PharmacySamplesView; nil for the legacy
+    /// seeded/admin-only demo locations.
+    var ownerUserID: UUID?
 
     init(
         id: UUID = UUID(),
@@ -20,7 +24,8 @@ final class SampleLocation {
         address: String,
         hasSamples: Bool = false,
         statusNote: String = "",
-        updatedAt: Date = .now
+        updatedAt: Date = .now,
+        ownerUserID: UUID? = nil
     ) {
         self.id = id
         self.groupID = groupID
@@ -29,5 +34,6 @@ final class SampleLocation {
         self.hasSamples = hasSamples
         self.statusNote = statusNote
         self.updatedAt = updatedAt
+        self.ownerUserID = ownerUserID
     }
 }

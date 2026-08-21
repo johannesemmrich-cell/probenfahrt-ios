@@ -6,6 +6,8 @@ struct SurveyDayCard: View {
     let currentUser: User
     let onToggle: () async -> Void
 
+    @Environment(AdminPreviewStore.self) private var adminPreview
+
     private var isSignedIn: Bool {
         row.entries.contains { $0.userID == currentUser.id }
     }
@@ -22,9 +24,17 @@ struct SurveyDayCard: View {
                 SurveyDayDetailView(row: row, users: users, currentUser: currentUser)
             } label: {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(row.day.date.formatted(.dateTime.weekday(.wide).day().month().locale(.app)))
-                        .font(.headline)
-                        .foregroundStyle(.primary)
+                    HStack(spacing: 6) {
+                        Text(row.day.date.formatted(.dateTime.weekday(.wide).day().month().locale(.app)))
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+
+                        if row.entries.count > 1 {
+                            Text("!")
+                                .font(.headline.weight(.bold))
+                                .foregroundStyle(.red)
+                        }
+                    }
 
                     if row.day.isLocked {
                         Label(lockLabel, systemImage: "lock.fill")
@@ -45,13 +55,22 @@ struct SurveyDayCard: View {
             Spacer()
 
             if !row.day.isLocked {
-                Button {
-                    Task { await onToggle() }
-                } label: {
-                    Text(isSignedIn ? "Austragen" : "Eintragen")
+                if shouldShowQuickToggle(for: row.day, user: currentUser, adminPreview: adminPreview) {
+                    Button {
+                        Task { await onToggle() }
+                    } label: {
+                        Text(isSignedIn ? "Austragen" : "Eintragen")
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(isSignedIn ? .red : .accentColor)
+                } else if isEffectiveAdmin(user: currentUser, adminPreview: adminPreview) {
+                    NavigationLink {
+                        SurveyDayDetailView(row: row, users: users, currentUser: currentUser)
+                    } label: {
+                        Text("Verwalten")
+                    }
+                    .buttonStyle(.bordered)
                 }
-                .buttonStyle(.bordered)
-                .tint(isSignedIn ? .red : .accentColor)
             }
         }
         .opacity(row.day.isLocked ? 0.5 : 1)

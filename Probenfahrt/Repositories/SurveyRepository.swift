@@ -20,6 +20,9 @@ protocol SurveyRepository {
     func signOut(userID: UUID, dayID: UUID) async throws
     func setLocked(_ locked: Bool, reason: String?, dayID: UUID) async throws
     func entriesWithDates(inMonth month: Int, year: Int, groupID: UUID) async throws -> [SurveyEntryWithDate]
+    /// All entries for the group, across all time — used for per-member
+    /// lifetime/weekly/monthly trip stats (see MemberDetailView).
+    func allEntriesWithDates(groupID: UUID) async throws -> [SurveyEntryWithDate]
 }
 
 @MainActor
@@ -85,6 +88,17 @@ final class SwiftDataSurveyRepository: SurveyRepository {
             calendar.component(.year, from: $0.date) == year && calendar.component(.month, from: $0.date) == month
         }
         let dateByDayID = Dictionary(uniqueKeysWithValues: matchingDays.map { ($0.id, $0.date) })
+
+        let allEntries = try context.fetch(FetchDescriptor<SurveyEntry>())
+        return allEntries.compactMap { entry in
+            guard let dayID = entry.surveyDayID, let date = dateByDayID[dayID] else { return nil }
+            return SurveyEntryWithDate(entry: entry, date: date)
+        }
+    }
+
+    func allEntriesWithDates(groupID: UUID) async throws -> [SurveyEntryWithDate] {
+        let allDays = try context.fetch(FetchDescriptor<SurveyDay>(predicate: #Predicate<SurveyDay> { $0.groupID == groupID }))
+        let dateByDayID = Dictionary(uniqueKeysWithValues: allDays.map { ($0.id, $0.date) })
 
         let allEntries = try context.fetch(FetchDescriptor<SurveyEntry>())
         return allEntries.compactMap { entry in

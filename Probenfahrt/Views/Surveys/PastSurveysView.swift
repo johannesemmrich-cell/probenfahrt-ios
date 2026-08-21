@@ -1,9 +1,9 @@
 import SwiftUI
 import SwiftData
 
-/// Admin-only: survey days before today, beyond the normal rolling window.
-/// TODO(Backlog #4): not technically access-controlled yet — reachable by
-/// anyone who reaches this screen via the "Als Admin anzeigen" dev toggle.
+/// Weeks that have fully rolled out of the 2 "aktuell" blocks in SurveysView.
+/// Visible to everyone; editing (Ein-/Austragen, Sperren) stays admin-only via
+/// `canEditSurveyDay`, enforced by the shared `SurveyDayCard`.
 struct PastSurveysView: View {
     let currentUser: User
 
@@ -21,32 +21,26 @@ struct PastSurveysView: View {
                     .foregroundStyle(.secondary)
             }
             ForEach(rows) { row in
-                NavigationLink {
-                    SurveyDayDetailView(row: row, users: users, currentUser: currentUser)
-                } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(row.day.date.formatted(.dateTime.weekday(.wide).day().month().year().locale(.app)))
-                            .font(.headline)
-                        Text("\(row.entries.count) eingetragen")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                // Every row here is, by construction, a past day (see load()),
+                // so SurveyDayCard's quick-toggle never renders for it
+                // (shouldShowQuickToggle is false for past days regardless of
+                // role) — admins instead use its "Verwalten" link. onToggle is
+                // consequently unreachable; kept as a no-op to satisfy the
+                // shared component's signature rather than forking the view.
+                SurveyDayCard(row: row, users: users, currentUser: currentUser) {}
             }
         }
         .navigationTitle("Vergangene Umfragen")
         .task { await load() }
+        .refreshable { await load() }
     }
 
     private func load() async {
         guard let groupID = currentUser.groupID else { return }
         do {
             users = try await userRepository.allUsers(inGroup: groupID)
-            let calendar = Calendar.current
-            let today = calendar.startOfDay(for: .now)
-            guard let start = calendar.date(byAdding: .day, value: -21, to: today),
-                  let end = calendar.date(byAdding: .day, value: -1, to: today) else { return }
-            let days = try await surveyRepository.existingSurveyDays(from: start, to: end, groupID: groupID)
+            guard let range = SurveyWeekWindow.pastRange(from: .now) else { return }
+            let days = try await surveyRepository.existingSurveyDays(from: range.start, to: range.end, groupID: groupID)
             var newRows: [SurveyDayRow] = []
             for day in days {
                 let entries = try await surveyRepository.entries(forDayID: day.id)

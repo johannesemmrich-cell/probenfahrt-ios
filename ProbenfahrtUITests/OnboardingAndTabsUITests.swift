@@ -13,6 +13,12 @@ final class OnboardingAndTabsUITests: XCTestCase {
         app.launchArguments += ["-UITest_ResetState"]
         app.launch()
 
+        let joinCodeField = app.textFields["Beitrittscode"]
+        XCTAssertTrue(joinCodeField.waitForExistence(timeout: 5))
+        joinCodeField.tap()
+        joinCodeField.typeText("LABOR2026")
+        app.buttons["Weiter"].tap()
+
         let nameField = app.textFields["Vollständiger Name"]
         XCTAssertTrue(nameField.waitForExistence(timeout: 5))
         nameField.tap()
@@ -22,12 +28,6 @@ final class OnboardingAndTabsUITests: XCTestCase {
         abbreviationField.tap()
         abbreviationField.typeText("TN")
 
-        app.buttons["Weiter"].tap()
-
-        let joinCodeField = app.textFields["Beitrittscode"]
-        XCTAssertTrue(joinCodeField.waitForExistence(timeout: 5))
-        joinCodeField.tap()
-        joinCodeField.typeText("LABOR2026")
         app.buttons["Beitreten"].tap()
 
         let tabBar = app.tabBars.firstMatch
@@ -46,11 +46,6 @@ final class OnboardingAndTabsUITests: XCTestCase {
         snap(app, "2-kalender")
 
         tabBar.buttons["Proben"].tap()
-        XCTAssertTrue(app.staticTexts["Zugriffscode erforderlich"].waitForExistence(timeout: 5))
-        let samplesCodeField = app.textFields["Freischaltcode"]
-        samplesCodeField.tap()
-        samplesCodeField.typeText("PROBEN2026")
-        app.buttons["Freischalten"].tap()
         XCTAssertTrue(app.navigationBars["Proben"].waitForExistence(timeout: 5))
 
         snap(app, "3-proben")
@@ -77,6 +72,24 @@ final class OnboardingAndTabsUITests: XCTestCase {
         adminToggle.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
         XCTAssertEqual(adminToggle.value as? String, "1")
         XCTAssertTrue(app.staticTexts["Monatsauswertung (PDF)"].waitForExistence(timeout: 5))
+        snap(app, "5-einstellungen")
+
+        // Über/Datenschutz + Emmrich-Banner sitzen unten, außerhalb des ersten Screens.
+        app.swipeUp()
+        XCTAssertTrue(app.staticTexts["Über Probenfahrt"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Datenschutz"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Emmrich Apps"].waitForExistence(timeout: 5))
+        snap(app, "6-einstellungen-unten")
+
+        app.staticTexts["Über Probenfahrt"].tap()
+        XCTAssertTrue(app.navigationBars["Über"].waitForExistence(timeout: 5))
+        snap(app, "7-ueber")
+        app.navigationBars.buttons.firstMatch.tap()
+
+        app.staticTexts["Datenschutz"].tap()
+        XCTAssertTrue(app.navigationBars["Datenschutz"].waitForExistence(timeout: 5))
+        snap(app, "8-datenschutz")
+        app.navigationBars.buttons.firstMatch.tap()
 
         tabBar.buttons["Umfragen"].tap()
         XCTAssertTrue(app.navigationBars["Umfragen"].waitForExistence(timeout: 5))

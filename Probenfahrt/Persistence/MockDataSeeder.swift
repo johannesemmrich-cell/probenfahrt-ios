@@ -10,7 +10,7 @@ import SwiftData
 /// seed data, not one of these ten.
 enum MockDataSeeder {
     static let testGroupJoinCode = "LABOR2026"
-    static let samplesAccessCode = "PROBEN2026"
+    static let testGroupPharmacyJoinCode = "PROBEN2026"
 
     private struct SeedUser {
         let name: String
@@ -35,7 +35,7 @@ enum MockDataSeeder {
         let existingGroupCount = (try? context.fetchCount(FetchDescriptor<TeamGroup>())) ?? 0
         guard existingGroupCount == 0 else { return }
 
-        let group = TeamGroup(name: "Laborteam Nord", joinCode: testGroupJoinCode)
+        let group = TeamGroup(name: "Laborteam Nord", joinCode: testGroupJoinCode, pharmacyJoinCode: testGroupPharmacyJoinCode)
         context.insert(group)
 
         let users = seedUsers.map { seed in

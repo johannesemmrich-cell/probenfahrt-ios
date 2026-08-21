@@ -5,6 +5,7 @@ struct ChatView: View {
     let currentUser: User
 
     @Environment(\.modelContext) private var modelContext
+    @Environment(DevModeStore.self) private var devMode
     @State private var users: [User] = []
 
     private var userRepository: UserRepository { SwiftDataUserRepository(context: modelContext) }
@@ -35,6 +36,7 @@ struct ChatView: View {
                 }
             }
             .navigationTitle("Chat")
+            .developerFeedbackOverlay(isActive: devMode.isActive, screen: "Chat", feature: "Übersicht", element: "Liste")
             .task { await load() }
         }
     }

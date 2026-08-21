@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 
 /// Admin-only monthly trip report as a shareable PDF, e.g. "Johannes: 7 Fahrten".
-/// TODO(Backlog #4): not technically access-controlled yet — reachable via the
+/// TODO(Backlog #2): not technically access-controlled yet — reachable via the
 /// "Als Admin anzeigen" dev toggle.
 struct AdminReportView: View {
     let currentUser: User

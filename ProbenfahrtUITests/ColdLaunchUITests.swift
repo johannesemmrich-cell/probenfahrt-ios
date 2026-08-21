@@ -10,7 +10,7 @@ final class ColdLaunchUITests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
 
-        let nameField = app.textFields["Vollständiger Name"]
-        XCTAssertTrue(nameField.waitForExistence(timeout: 20))
+        let codeField = app.textFields["Beitrittscode"]
+        XCTAssertTrue(codeField.waitForExistence(timeout: 20))
     }
 }

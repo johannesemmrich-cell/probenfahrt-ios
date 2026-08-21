@@ -5,9 +5,10 @@ struct SurveysView: View {
     let currentUser: User
 
     @Environment(\.modelContext) private var modelContext
-    @Environment(AdminPreviewStore.self) private var adminPreview
+    @Environment(DevModeStore.self) private var devMode
 
-    @State private var rows: [SurveyDayRow] = []
+    @State private var blocks: [SurveyWeekWindow.WeekBlock] = []
+    @State private var rowsByBlock: [Date: [SurveyDayRow]] = [:]
     @State private var users: [User] = []
     @State private var hasLoadedOnce = false
 
@@ -17,22 +18,27 @@ struct SurveysView: View {
     var body: some View {
         NavigationStack {
             List {
-                if rows.isEmpty && hasLoadedOnce {
+                if blocks.isEmpty && hasLoadedOnce {
                     ContentUnavailableView("Keine Umfragen", systemImage: "list.bullet.clipboard")
                 }
-                ForEach(rows) { row in
-                    SurveyDayCard(row: row, users: users, currentUser: currentUser) {
-                        await toggleSignIn(row: row)
+                ForEach(Array(blocks.enumerated()), id: \.element.id) { index, block in
+                    Section {
+                        ForEach(rowsByBlock[block.weekStart] ?? []) { row in
+                            SurveyDayCard(row: row, users: users, currentUser: currentUser) {
+                                await toggleSignIn(row: row)
+                            }
+                        }
+                    } header: {
+                        fahrplanHeader(for: block, isCurrent: index == 0)
                     }
                 }
             }
             .navigationTitle("Umfragen")
+            .developerFeedbackOverlay(isActive: devMode.isActive, screen: "Umfragen", feature: "Wochenblöcke", element: "Liste")
             .toolbar {
-                if isEffectiveAdmin(user: currentUser, adminPreview: adminPreview) {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        NavigationLink("Vergangen") {
-                            PastSurveysView(currentUser: currentUser)
-                        }
+                ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink("Vergangen") {
+                        PastSurveysView(currentUser: currentUser)
                     }
                 }
             }
@@ -41,21 +47,42 @@ struct SurveysView: View {
         }
     }
 
+    private func fahrplanHeader(for block: SurveyWeekWindow.WeekBlock, isCurrent: Bool) -> some View {
+        HStack {
+            Text("Fahrplan vom \(block.weekStart.formatted(.dateTime.weekday(.wide).day().month().locale(.app))) bis \(block.weekEnd.formatted(.dateTime.weekday(.wide).day().month().locale(.app)))")
+            if isCurrent {
+                Spacer()
+                Text("Aktuell")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color.accentColor))
+            }
+        }
+    }
+
     private func load() async {
         guard let groupID = currentUser.groupID else { return }
         do {
             users = try await userRepository.allUsers(inGroup: groupID)
-            let dates = SurveyWeekWindow.upcomingDates(from: .now)
-            guard let start = dates.first, let end = dates.last else { return }
+            let newBlocks = SurveyWeekWindow.currentWeekBlocks(from: .now)
+            guard let start = newBlocks.first?.weekStart, let end = newBlocks.last?.weekEnd else { return }
             let days = try await surveyRepository.surveyDays(from: start, to: end, groupID: groupID)
-            var newRows: [SurveyDayRow] = []
-            for day in days {
-                let entries = try await surveyRepository.entries(forDayID: day.id)
-                newRows.append(SurveyDayRow(day: day, entries: entries))
+            var newRowsByBlock: [Date: [SurveyDayRow]] = [:]
+            for block in newBlocks {
+                var rows: [SurveyDayRow] = []
+                for day in days where block.days.contains(where: { Calendar.current.isDate($0, inSameDayAs: day.date) }) {
+                    let entries = try await surveyRepository.entries(forDayID: day.id)
+                    rows.append(SurveyDayRow(day: day, entries: entries))
+                }
+                newRowsByBlock[block.weekStart] = rows.sorted { $0.day.date < $1.day.date }
             }
-            rows = newRows
+            blocks = newBlocks
+            rowsByBlock = newRowsByBlock
         } catch {
-            rows = []
+            blocks = []
+            rowsByBlock = [:]
         }
         hasLoadedOnce = true
     }

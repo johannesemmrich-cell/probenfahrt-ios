@@ -10,6 +10,8 @@ enum PersistenceController {
             SurveyEntry.self,
             ChatMessage.self,
             SampleLocation.self,
+            FeedbackEntry.self,
+            DevTodoItem.self,
         ])
     }
 

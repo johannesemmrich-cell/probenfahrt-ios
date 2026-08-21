@@ -1,0 +1,153 @@
+import SwiftUI
+import SwiftData
+
+struct MemberDetailView: View {
+    private enum StatPeriod: String, CaseIterable {
+        case week = "Woche"
+        case month = "Monat"
+    }
+
+    let user: User
+    let currentUser: User
+    let onRemoved: () -> Void
+
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var abbreviation: String
+    @State private var errorMessage: String?
+    @State private var allEntries: [SurveyEntryWithDate] = []
+    @State private var period: StatPeriod = .week
+    @State private var referenceDate = Date.now
+    @State private var isShowingRemoveConfirmation = false
+
+    private var userRepository: UserRepository { SwiftDataUserRepository(context: modelContext) }
+    private var surveyRepository: SurveyRepository { SwiftDataSurveyRepository(context: modelContext) }
+
+    init(user: User, currentUser: User, onRemoved: @escaping () -> Void) {
+        self.user = user
+        self.currentUser = currentUser
+        self.onRemoved = onRemoved
+        _abbreviation = State(initialValue: user.abbreviation)
+    }
+
+    private var periodComponent: Calendar.Component { period == .week ? .weekOfYear : .month }
+
+    private var periodInterval: DateInterval? {
+        Calendar.current.dateInterval(of: periodComponent, for: referenceDate)
+    }
+
+    private var periodTripCount: Int {
+        guard let periodInterval else { return 0 }
+        return MemberStatsCalculator.tripCount(for: user.id, entries: allEntries, in: periodInterval)
+    }
+
+    private var periodLabel: String {
+        switch period {
+        case .week: return referenceDate.formatted(.dateTime.week().year().locale(.app))
+        case .month: return referenceDate.formatted(.dateTime.month(.wide).year().locale(.app))
+        }
+    }
+
+    var body: some View {
+        Form {
+            Section("Profil") {
+                LabeledContent("Name", value: user.name)
+                TextField("Kürzel", text: $abbreviation)
+                    .textInputAutocapitalization(.characters)
+                    .autocorrectionDisabled()
+                    .onSubmit { Task { await saveAbbreviation() } }
+                if let errorMessage {
+                    Text(errorMessage).font(.footnote).foregroundStyle(.red)
+                }
+                LabeledContent("Beigetreten am", value: user.createdAt.formatted(.dateTime.day().month().year().locale(.app)))
+            }
+
+            Section("Fahrten") {
+                LabeledContent("Insgesamt", value: "\(MemberStatsCalculator.totalTrips(for: user.id, entries: allEntries))")
+
+                Picker("Zeitraum", selection: $period) {
+                    ForEach(StatPeriod.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+
+                HStack {
+                    Button { shift(by: -1) } label: { Image(systemName: "chevron.left") }
+                    Spacer()
+                    Text(periodLabel).font(.subheadline)
+                    Spacer()
+                    Button { shift(by: 1) } label: { Image(systemName: "chevron.right") }
+                }
+                .buttonStyle(.plain)
+
+                LabeledContent(
+                    period == .week ? "Fahrten diese Woche" : "Fahrten diesen Monat",
+                    value: "\(periodTripCount)"
+                )
+            }
+
+            if user.id != currentUser.id {
+                Section {
+                    Button("Aus Gruppe entfernen", role: .destructive) {
+                        isShowingRemoveConfirmation = true
+                    }
+                } footer: {
+                    Text("Vergangene Fahrten bleiben in der Auswertung erhalten.")
+                }
+            }
+        }
+        .navigationTitle(user.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await loadEntries() }
+        .confirmationDialog(
+            "\(user.name) wirklich aus der Gruppe entfernen?",
+            isPresented: $isShowingRemoveConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Entfernen", role: .destructive) { Task { await remove() } }
+            Button("Abbrechen", role: .cancel) {}
+        }
+    }
+
+    private func shift(by value: Int) {
+        if let newDate = Calendar.current.date(byAdding: periodComponent, value: value, to: referenceDate) {
+            referenceDate = newDate
+        }
+    }
+
+    private func loadEntries() async {
+        guard let groupID = user.groupID else { return }
+        allEntries = (try? await surveyRepository.allEntriesWithDates(groupID: groupID)) ?? []
+    }
+
+    private func saveAbbreviation() async {
+        errorMessage = nil
+        let trimmed = abbreviation.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            errorMessage = "Kürzel darf nicht leer sein."
+            abbreviation = user.abbreviation
+            return
+        }
+        guard let groupID = user.groupID else { return }
+        if trimmed.lowercased() != user.abbreviation.lowercased() {
+            if let taken = try? await userRepository.isAbbreviationTaken(trimmed, inGroup: groupID), taken {
+                errorMessage = "Dieses Kürzel ist schon vergeben."
+                abbreviation = user.abbreviation
+                return
+            }
+        }
+        try? await userRepository.updateUser(id: user.id, name: user.name, abbreviation: trimmed)
+    }
+
+    private func remove() async {
+        do {
+            try await userRepository.deleteUser(id: user.id)
+            onRemoved()
+            dismiss()
+        } catch UserRepositoryError.cannotRemoveLastAdmin {
+            errorMessage = "Das letzte Admin-Konto der Gruppe kann nicht entfernt werden."
+        } catch {
+            errorMessage = "Etwas ist schiefgelaufen. Bitte erneut versuchen."
+        }
+    }
+}

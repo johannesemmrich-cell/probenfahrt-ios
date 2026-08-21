@@ -10,6 +10,7 @@ struct CalendarView: View {
     }
 
     @Environment(\.modelContext) private var modelContext
+    @Environment(DevModeStore.self) private var devMode
     @State private var referenceDate = Calendar.current.startOfDay(for: .now)
     @State private var viewMode: ViewMode = .month
     @State private var rows: [SurveyDayRow] = []
@@ -38,6 +39,7 @@ struct CalendarView: View {
                 Spacer()
             }
             .navigationTitle("Kalender")
+            .developerFeedbackOverlay(isActive: devMode.isActive, screen: "Kalender", feature: "Monats-/Wochenansicht", element: "Grid")
             .task(id: referenceDate) { await load() }
         }
     }
