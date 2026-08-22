@@ -13,9 +13,11 @@ ergänzt.
    Dev-Toggle "Als Admin anzeigen"/Dev-Mode-Admin-Vorschau bzw.
    Dev-Mode-Bypass-Login und statt des Klartext-Admin-Codes "Admin" in den
    Einstellungen). Dazu gehört auch der Entwicklermodus-Bypass, der selbst
-   den letzten Haupt-Admin aus der Gruppe entfernen bzw. ihm den
-   Haupt-Admin-Status entziehen kann (MemberDetailView/UserRepository
-   `bypassLastAdminGuard`) — bleibt bis dahin ein bewusster, nur im
-   Entwicklermodus/via Admin-Vorschau erreichbarer Prototyp-Notausgang.
+   den letzten Haupt-Admin aus der Gruppe entfernen, ihm den
+   Haupt-Admin-Status entziehen (MemberDetailView/UserRepository
+   `bypassLastAdminGuard`) sowie beliebige Mitglieder/Vice-Admins direkt
+   zu Haupt-Admin ernennen kann ("Zum Haupt-Admin machen") — bleibt bis
+   dahin ein bewusster, nur im Entwicklermodus/via Admin-Vorschau
+   erreichbarer Prototyp-Notausgang.
 3. (Platz für weitere Punkte, die im Gesprächsverlauf mit "Backlog:"
    markiert werden.)

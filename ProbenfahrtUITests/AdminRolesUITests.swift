@@ -110,6 +110,25 @@ final class AdminRolesUITests: XCTestCase {
         membersLink.tap()
         XCTAssertTrue(app.navigationBars["Mitglieder verwalten"].waitForExistence(timeout: 5))
 
+        // Promote a regular member straight to Haupt-Admin — a real Haupt-Admin
+        // can only offer Vice-Admin; only the Dev-Mode/Admin-Vorschau override
+        // can appoint a peer Haupt-Admin outright.
+        let annaRow = app.staticTexts["Anna Weber"]
+        XCTAssertTrue(annaRow.waitForExistence(timeout: 5))
+        annaRow.tap()
+        XCTAssertTrue(app.navigationBars["Anna Weber"].waitForExistence(timeout: 5))
+        app.swipeUp()
+        app.swipeUp()
+
+        let promoteButton = app.buttons["Zum Haupt-Admin machen"]
+        XCTAssertTrue(promoteButton.waitForExistence(timeout: 5))
+        promoteButton.tap()
+        XCTAssertTrue(app.staticTexts["Rolle, Haupt-Admin"].waitForExistence(timeout: 5))
+        snap(app, "17-anna-zum-haupt-admin-befoerdert")
+
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["Mitglieder verwalten"].waitForExistence(timeout: 5))
+
         // "Johannes Emmrich" is the sole seeded Haupt-Admin.
         let johannesRow = app.staticTexts["Johannes Emmrich"]
         XCTAssertTrue(johannesRow.waitForExistence(timeout: 5))

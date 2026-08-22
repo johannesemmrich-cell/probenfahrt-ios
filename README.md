@@ -101,16 +101,18 @@ Account man bekommt:
     den Einstellungen, nur innerhalb des Entwicklermodus statt daneben.
   - Zwei Übersichts-Sections listen alle Haupt-Admin- und alle
     Vice-Admin-Rechte auf, gefolgt von einer dritten Section, die die
-    beiden Entwicklermodus-only-Rechte erklärt (siehe nächster Punkt).
+    drei Entwicklermodus-only-Rechte erklärt (siehe nächster Punkt).
   - Solange "Alle Admin-Rechte" aktiv ist (oder die alte "Als Admin
     anzeigen"-Vorschau), zeigt die Detailansicht eines Mitglieds in
-    "Mitglieder verwalten" bei einem Haupt-Admin zusätzlich den Button
+    "Mitglieder verwalten" bei einem Mitglied/Vice-Admin zusätzlich den
+    Button "Zum Haupt-Admin machen" (direkte Ernennung, ohne den
+    Admin-Code selbst einzugeben) und bei einem Haupt-Admin den Button
     "Haupt-Admin-Status entfernen" — stuft auch den letzten verbliebenen
     Haupt-Admin auf Mitglied zurück. Der Button "Aus Gruppe entfernen"
     entfernt in diesem Modus ebenfalls den letzten Haupt-Admin, statt das
-    wie im Normalbetrieb zu verweigern. Beides ist bewusst nur über diesen
-    Entwicklermodus-Bypass erreichbar, nicht für einen echten Haupt-Admin
-    (siehe Annahmen unten).
+    wie im Normalbetrieb zu verweigern. Alle drei sind bewusst nur über
+    diesen Entwicklermodus-Bypass erreichbar, nicht für einen echten
+    Haupt-Admin (siehe Annahmen unten).
 - **Über/Datenschutz + Emmrich-Banner:** In den Einstellungen gibt es einen
   "Über"-Bereich (Über Probenfahrt, Datenschutz) sowie ganz unten das
   "Mehr von Emmrich"-Banner (verlinkt auf emmrich-business.com) — analog

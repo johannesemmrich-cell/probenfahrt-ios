@@ -110,12 +110,13 @@ struct DeveloperModeView: View {
             }
 
             Section {
+                Label("Mitglieder oder Vice-Admins direkt zu Haupt-Admin machen", systemImage: "person.crop.circle.badge.checkmark")
                 Label("Auch den letzten Haupt-Admin aus der Gruppe entfernen", systemImage: "person.crop.circle.badge.exclamationmark")
                 Label("Haupt-Admin-Status von jedem entfernen — auch dem letzten", systemImage: "shield.slash")
             } header: {
                 Text("Nur im Entwicklermodus (Admin-Vorschau)")
             } footer: {
-                Text("Das kann selbst ein echter Haupt-Admin nicht — schützt die Gruppe im Normalbetrieb davor, ohne Admin dazustehen.")
+                Text("Das kann selbst ein echter Haupt-Admin nicht — schützt die Gruppe im Normalbetrieb davor, ohne Admin dazustehen bzw. davor, dass beliebig neue Haupt-Admins ernannt werden. Ein echter Haupt-Admin wird nur über den Admin-Code in den Einstellungen selbst freigeschaltet.")
             }
 
             let inProgressItems = todoItems.filter { InProgressStore.isInProgress($0.id) && !$0.isCompleted }

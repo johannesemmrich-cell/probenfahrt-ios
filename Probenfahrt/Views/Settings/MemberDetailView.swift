@@ -102,8 +102,19 @@ struct MemberDetailView: View {
                         get: { user.role == .viceAdmin },
                         set: { newValue in Task { await setViceAdmin(newValue) } }
                     ))
+                    // Appointing a peer Haupt-Admin (as opposed to unlocking
+                    // your own via the Admin-Code field) is a deliberate
+                    // developer-only escape hatch, symmetric with "Haupt-
+                    // Admin-Status entfernen" below.
+                    if isDeveloperOverride {
+                        Button("Zum Haupt-Admin machen") {
+                            Task { await promoteToHauptAdmin() }
+                        }
+                    }
                 } footer: {
-                    Text("Vice-Admin kann fast alles, was ein Admin kann — außer Mitglieder entfernen oder Kürzel ändern.")
+                    Text(isDeveloperOverride
+                         ? "Vice-Admin kann fast alles, was ein Admin kann — außer Mitglieder entfernen oder Kürzel ändern. \"Zum Haupt-Admin machen\" ist nur im Entwicklermodus/Admin-Vorschau möglich."
+                         : "Vice-Admin kann fast alles, was ein Admin kann — außer Mitglieder entfernen oder Kürzel ändern.")
                 }
             }
 
@@ -189,6 +200,10 @@ struct MemberDetailView: View {
 
     private func removeAdminStatus() async {
         try? await userRepository.setRole(id: user.id, role: .member, bypassLastAdminGuard: true)
+    }
+
+    private func promoteToHauptAdmin() async {
+        try? await userRepository.setRole(id: user.id, role: .admin, bypassLastAdminGuard: false)
     }
 
     private func remove() async {
