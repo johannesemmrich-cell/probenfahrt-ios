@@ -12,6 +12,10 @@ ergänzt.
    Nutzer, Apotheke vs. Laborteam) technisch durchsetzen (Auth statt
    Dev-Toggle "Als Admin anzeigen"/Dev-Mode-Admin-Vorschau bzw.
    Dev-Mode-Bypass-Login und statt des Klartext-Admin-Codes "Admin" in den
-   Einstellungen).
+   Einstellungen). Dazu gehört auch der Entwicklermodus-Bypass, der selbst
+   den letzten Haupt-Admin aus der Gruppe entfernen bzw. ihm den
+   Haupt-Admin-Status entziehen kann (MemberDetailView/UserRepository
+   `bypassLastAdminGuard`) — bleibt bis dahin ein bewusster, nur im
+   Entwicklermodus/via Admin-Vorschau erreichbarer Prototyp-Notausgang.
 3. (Platz für weitere Punkte, die im Gesprächsverlauf mit "Backlog:"
    markiert werden.)

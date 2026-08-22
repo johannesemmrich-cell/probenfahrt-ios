@@ -109,6 +109,15 @@ struct DeveloperModeView: View {
                 Label("Mitgliederliste, Beitrittsdatum & Fahrten-Statistiken einsehen", systemImage: "list.bullet")
             }
 
+            Section {
+                Label("Auch den letzten Haupt-Admin aus der Gruppe entfernen", systemImage: "person.crop.circle.badge.exclamationmark")
+                Label("Haupt-Admin-Status von jedem entfernen — auch dem letzten", systemImage: "shield.slash")
+            } header: {
+                Text("Nur im Entwicklermodus (Admin-Vorschau)")
+            } footer: {
+                Text("Das kann selbst ein echter Haupt-Admin nicht — schützt die Gruppe im Normalbetrieb davor, ohne Admin dazustehen.")
+            }
+
             let inProgressItems = todoItems.filter { InProgressStore.isInProgress($0.id) && !$0.isCompleted }
             let openItems = todoItems.filter { !InProgressStore.isInProgress($0.id) && !$0.isCompleted }
             let doneItems = todoItems.filter { $0.isCompleted }

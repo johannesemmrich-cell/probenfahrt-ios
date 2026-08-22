@@ -100,7 +100,17 @@ Account man bekommt:
   - Toggle "Alle Admin-Rechte (Haupt-Admin)" — wie "Als Admin anzeigen" in
     den Einstellungen, nur innerhalb des Entwicklermodus statt daneben.
   - Zwei Übersichts-Sections listen alle Haupt-Admin- und alle
-    Vice-Admin-Rechte auf.
+    Vice-Admin-Rechte auf, gefolgt von einer dritten Section, die die
+    beiden Entwicklermodus-only-Rechte erklärt (siehe nächster Punkt).
+  - Solange "Alle Admin-Rechte" aktiv ist (oder die alte "Als Admin
+    anzeigen"-Vorschau), zeigt die Detailansicht eines Mitglieds in
+    "Mitglieder verwalten" bei einem Haupt-Admin zusätzlich den Button
+    "Haupt-Admin-Status entfernen" — stuft auch den letzten verbliebenen
+    Haupt-Admin auf Mitglied zurück. Der Button "Aus Gruppe entfernen"
+    entfernt in diesem Modus ebenfalls den letzten Haupt-Admin, statt das
+    wie im Normalbetrieb zu verweigern. Beides ist bewusst nur über diesen
+    Entwicklermodus-Bypass erreichbar, nicht für einen echten Haupt-Admin
+    (siehe Annahmen unten).
 - **Über/Datenschutz + Emmrich-Banner:** In den Einstellungen gibt es einen
   "Über"-Bereich (Über Probenfahrt, Datenschutz) sowie ganz unten das
   "Mehr von Emmrich"-Banner (verlinkt auf emmrich-business.com) — analog
@@ -173,7 +183,13 @@ einer sinnvollen Annahme beantwortet werden.
   nur für `isEffectiveAdmin` — sie sollen weiterhin volle Admin-Vorschau
   bleiben, nicht nur Vice-Admin-Vorschau. `UserRepository.setRole`/
   `deleteUser` weigern sich, den letzten Haupt-Admin einer Gruppe zu
-  entfernen oder zurückzustufen (gleicher Schutz wie beim Entfernen).
+  entfernen oder zurückzustufen (gleicher Schutz wie beim Entfernen) — außer
+  der Aufrufer setzt `bypassLastAdminGuard`, was `MemberDetailView` nur tut,
+  wenn `isDeveloperOverride` (Admin-Vorschau-Toggle oder Dev-Mode-Toggle)
+  aktiv ist. Damit kann selbst ein echter Haupt-Admin niemanden aus der
+  Gruppe werfen oder auf Mitglied zurückstufen, wenn das die Gruppe ohne
+  Haupt-Admin zurücklassen würde — nur der bewusste Entwicklermodus-/
+  Vorschau-Bypass darf das, als Notausgang für diesen Prototyp-Stand.
 - **Admin verwaltet vergangene Tage über "Verwalten" statt Eintragen-Knopf**:
   Sobald ein Umfrage-Tag in der Vergangenheit liegt, verschwindet der
   einfache Eintragen/Austragen-Knopf auch für Admins — stattdessen führt ein

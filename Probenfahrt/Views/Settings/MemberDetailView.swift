@@ -27,6 +27,7 @@ struct MemberDetailView: View {
     private var surveyRepository: SurveyRepository { SwiftDataSurveyRepository(context: modelContext) }
 
     private var isFullAdmin: Bool { Probenfahrt.isFullAdmin(user: currentUser, adminPreview: adminPreview, devMode: devMode) }
+    private var isDeveloperOverride: Bool { Probenfahrt.isDeveloperOverride(adminPreview: adminPreview, devMode: devMode) }
 
     init(user: User, currentUser: User, onRemoved: @escaping () -> Void) {
         self.user = user
@@ -106,13 +107,28 @@ struct MemberDetailView: View {
                 }
             }
 
+            // Even a real Haupt-Admin can't strip another Haupt-Admin's role —
+            // only the DevMode/Admin-Vorschau escape hatch can, since that's a
+            // deliberate developer override, not a normal team action.
+            if isDeveloperOverride, user.role == .admin {
+                Section {
+                    Button("Haupt-Admin-Status entfernen", role: .destructive) {
+                        Task { await removeAdminStatus() }
+                    }
+                } footer: {
+                    Text("Nur im Entwicklermodus/Admin-Vorschau möglich — stuft auf Mitglied zurück, auch wenn es der letzte Haupt-Admin ist.")
+                }
+            }
+
             if isFullAdmin, user.id != currentUser.id {
                 Section {
                     Button("Aus Gruppe entfernen", role: .destructive) {
                         isShowingRemoveConfirmation = true
                     }
                 } footer: {
-                    Text("Vergangene Fahrten bleiben in der Auswertung erhalten.")
+                    Text(isDeveloperOverride
+                         ? "Entwicklermodus/Admin-Vorschau: entfernt auch den letzten Haupt-Admin. Vergangene Fahrten bleiben in der Auswertung erhalten."
+                         : "Vergangene Fahrten bleiben in der Auswertung erhalten.")
                 }
             }
         }
@@ -168,12 +184,16 @@ struct MemberDetailView: View {
     }
 
     private func setViceAdmin(_ isOn: Bool) async {
-        try? await userRepository.setRole(id: user.id, role: isOn ? .viceAdmin : .member)
+        try? await userRepository.setRole(id: user.id, role: isOn ? .viceAdmin : .member, bypassLastAdminGuard: false)
+    }
+
+    private func removeAdminStatus() async {
+        try? await userRepository.setRole(id: user.id, role: .member, bypassLastAdminGuard: true)
     }
 
     private func remove() async {
         do {
-            try await userRepository.deleteUser(id: user.id)
+            try await userRepository.deleteUser(id: user.id, bypassLastAdminGuard: isDeveloperOverride)
             onRemoved()
             dismiss()
         } catch UserRepositoryError.cannotRemoveLastAdmin {

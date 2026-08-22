@@ -249,7 +249,7 @@ struct SettingsView: View {
             adminCodeError = "Falscher Code."
             return
         }
-        try? await userRepository.setRole(id: currentUser.id, role: .admin)
+        try? await userRepository.setRole(id: currentUser.id, role: .admin, bypassLastAdminGuard: false)
         adminCode = ""
         onCurrentUserUpdated(currentUser)
     }

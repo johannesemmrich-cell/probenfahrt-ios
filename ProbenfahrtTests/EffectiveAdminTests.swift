@@ -57,6 +57,26 @@ struct EffectiveAdminTests {
         #expect(isFullAdmin(user: member, adminPreview: adminPreview(), devMode: devMode(adminPreviewActive: true)))
     }
 
+    // MARK: — isDeveloperOverride
+
+    @Test func noOverrideIsNotDeveloperOverride() {
+        #expect(!isDeveloperOverride(adminPreview: adminPreview(), devMode: devMode()))
+    }
+
+    @Test func adminPreviewEnabledIsDeveloperOverride() {
+        #expect(isDeveloperOverride(adminPreview: adminPreview(enabled: true), devMode: devMode()))
+    }
+
+    @Test func devModeAdminPreviewActiveIsDeveloperOverride() {
+        #expect(isDeveloperOverride(adminPreview: adminPreview(), devMode: devMode(adminPreviewActive: true)))
+    }
+
+    /// A real Haupt-Admin role alone doesn't count — `isDeveloperOverride`
+    /// only reflects the two dev/preview flags, not the user's actual role.
+    @Test func realHauptAdminAloneIsNotDeveloperOverride() {
+        #expect(!isDeveloperOverride(adminPreview: adminPreview(), devMode: devMode()))
+    }
+
     // MARK: — canEditSurveyDay
 
     @Test func memberCanEditFutureDay() {

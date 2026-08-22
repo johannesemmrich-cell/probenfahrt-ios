@@ -34,9 +34,11 @@ protocol UserRepository {
     /// Used both for self-promotion to Haupt-Admin (via the Admin-Code field
     /// in Einstellungen) and Vice-Admin promotion/demotion (via
     /// MemberDetailView). Refuses to demote a group's last Haupt-Admin, same
-    /// guard as `deleteUser`.
-    func setRole(id: UUID, role: UserRole) async throws
-    func deleteUser(id: UUID) async throws
+    /// guard as `deleteUser` — unless `bypassLastAdminGuard` is set, which
+    /// only the DevMode/Admin-Vorschau escape hatch in MemberDetailView ever
+    /// passes.
+    func setRole(id: UUID, role: UserRole, bypassLastAdminGuard: Bool) async throws
+    func deleteUser(id: UUID, bypassLastAdminGuard: Bool) async throws
 }
 
 @MainActor
@@ -100,9 +102,9 @@ final class SwiftDataUserRepository: UserRepository {
         try context.save()
     }
 
-    func setRole(id: UUID, role: UserRole) async throws {
+    func setRole(id: UUID, role: UserRole, bypassLastAdminGuard: Bool = false) async throws {
         guard let user = try await user(id: id) else { return }
-        if user.role == .admin, role != .admin, let groupID = user.groupID {
+        if !bypassLastAdminGuard, user.role == .admin, role != .admin, let groupID = user.groupID {
             let adminCount = try await allUsers(inGroup: groupID).filter { $0.role == .admin }.count
             guard adminCount > 1 else { throw UserRepositoryError.cannotRemoveLastAdmin }
         }
@@ -110,9 +112,9 @@ final class SwiftDataUserRepository: UserRepository {
         try context.save()
     }
 
-    func deleteUser(id: UUID) async throws {
+    func deleteUser(id: UUID, bypassLastAdminGuard: Bool = false) async throws {
         guard let user = try await user(id: id) else { return }
-        if let groupID = user.groupID {
+        if !bypassLastAdminGuard, let groupID = user.groupID {
             let adminCount = try await allUsers(inGroup: groupID).filter { $0.role == .admin }.count
             guard canRemoveUser(user, adminCountInGroup: adminCount) else {
                 throw UserRepositoryError.cannotRemoveLastAdmin

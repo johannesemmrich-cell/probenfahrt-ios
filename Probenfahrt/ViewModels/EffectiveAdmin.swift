@@ -15,6 +15,18 @@ func isFullAdmin(user: User, adminPreview: AdminPreviewStore, devMode: DevModeSt
     user.role == .admin || adminPreview.isEnabled || devMode.isAdminPreviewActive
 }
 
+/// True only for the two preview/override flags — NOT a real Haupt-Admin
+/// role. This is "someone is poking at the app with a dev/preview override
+/// active", as opposed to "a real team Haupt-Admin". Gates a couple of
+/// escape hatches (removing the group's last Haupt-Admin, stripping an
+/// existing Haupt-Admin's role) that even a real Haupt-Admin can't do —
+/// those stay blocked so a real admin can't accidentally leave the group
+/// with zero manageable admins; the developer explicitly bypassing via a
+/// preview override is a different, deliberate situation.
+func isDeveloperOverride(adminPreview: AdminPreviewStore, devMode: DevModeStore) -> Bool {
+    adminPreview.isEnabled || devMode.isAdminPreviewActive
+}
+
 /// Once a survey day's date is in the past, only an admin (either tier) may
 /// still sign people in/out or lock/unlock it — everyone else gets a
 /// read-only view.
