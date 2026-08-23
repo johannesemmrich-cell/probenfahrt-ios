@@ -1,17 +1,16 @@
 import Foundation
 import SwiftData
 
-/// An "Apotheke/Labor" from the Proben tab. Status is mock-only for now — see
-/// BACKLOG #2 for the real reporting/interaction logic.
+/// An "Apotheke/Labor" identity for the Proben tab — name/address plus which
+/// group it belongs to. The actual yes/no status per day lives in
+/// SampleReport, not here (see BACKLOG #3 for the QR-code-only reporting
+/// path this identity will also need to support).
 @Model
 final class SampleLocation {
     var id: UUID = UUID()
     var groupID: UUID?
     var name: String = ""
     var address: String = ""
-    var hasSamples: Bool = false
-    var statusNote: String = ""
-    var updatedAt: Date = Date.now
     /// Set for locations self-managed by a pharmacy account (see
     /// AccountKind.pharmacy) via PharmacySamplesView; nil for the legacy
     /// seeded/admin-only demo locations.
@@ -22,18 +21,12 @@ final class SampleLocation {
         groupID: UUID?,
         name: String,
         address: String,
-        hasSamples: Bool = false,
-        statusNote: String = "",
-        updatedAt: Date = .now,
         ownerUserID: UUID? = nil
     ) {
         self.id = id
         self.groupID = groupID
         self.name = name
         self.address = address
-        self.hasSamples = hasSamples
-        self.statusNote = statusNote
-        self.updatedAt = updatedAt
         self.ownerUserID = ownerUserID
     }
 }

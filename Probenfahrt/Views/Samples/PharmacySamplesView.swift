@@ -13,9 +13,11 @@ struct PharmacySamplesView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(DevModeStore.self) private var devMode
     @State private var location: SampleLocation?
+    @State private var todaysReport: SampleReport?
     @State private var isSaving = false
 
     private var samplesRepository: SamplesRepository { SwiftDataSamplesRepository(context: modelContext) }
+    private var today: Date { SampleReport.normalizedDay(.now) }
 
     var body: some View {
         NavigationStack {
@@ -42,7 +44,7 @@ struct PharmacySamplesView: View {
                     .buttonStyle(.borderedProminent)
                     .tint(.green)
                     .controlSize(.large)
-                    .disabled(isSaving || location?.hasSamples == true)
+                    .disabled(isSaving || todaysReport?.hasSamples == true)
 
                     Button {
                         Task { await setStatus(false) }
@@ -52,12 +54,12 @@ struct PharmacySamplesView: View {
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.large)
-                    .disabled(isSaving || location?.hasSamples == false)
+                    .disabled(isSaving || todaysReport?.hasSamples == false)
                 }
                 .padding(.horizontal, 24)
 
-                if let location {
-                    Text(location.hasSamples ? "Aktueller Status: Proben vorhanden" : "Aktueller Status: Keine Proben")
+                if let todaysReport {
+                    Text(todaysReport.hasSamples ? "Aktueller Status: Proben vorhanden" : "Aktueller Status: Keine Proben")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -74,13 +76,15 @@ struct PharmacySamplesView: View {
     private func load() async {
         guard let groupID = currentUser.groupID else { return }
         location = try? await samplesRepository.findOrCreateLocation(ownerUserID: currentUser.id, groupID: groupID, name: currentUser.name)
+        guard let location else { return }
+        todaysReport = try? await samplesRepository.report(locationID: location.id, day: today)
     }
 
     private func setStatus(_ hasSamples: Bool) async {
         guard let location else { return }
         isSaving = true
         defer { isSaving = false }
-        try? await samplesRepository.setHasSamples(hasSamples, locationID: location.id)
+        try? await samplesRepository.setHasSamples(hasSamples, locationID: location.id, day: today)
         await load()
     }
 }

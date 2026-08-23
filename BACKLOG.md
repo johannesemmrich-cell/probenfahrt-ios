@@ -19,5 +19,14 @@ ergänzt.
    zu Haupt-Admin ernennen kann ("Zum Haupt-Admin machen") — bleibt bis
    dahin ein bewusster, nur im Entwicklermodus/via Admin-Vorschau
    erreichbarer Prototyp-Notausgang.
-3. (Platz für weitere Punkte, die im Gesprächsverlauf mit "Backlog:"
+3. **[Hohe Priorität]** QR-Code-Zugang für Apotheken ohne App-Installation:
+   Apotheke scannt einen apothekenspezifischen QR-Code und landet auf einer
+   schlanken Webseite mit derselben Ja/Nein-Frage wie PharmacySamplesView
+   ("Habt ihr heute Proben?") — kein Download, kein Account nötig,
+   Zuordnung läuft über einen eindeutigen Token pro Apotheke im Link. Setzt
+   Punkt 1 (echtes Backend) voraus, da die Web-Eingabe sonst nirgendwo
+   landet, wo das Laborteam-iPhone sie sieht. Pro Apotheke muss außerdem ein
+   eigener QR-Code generierbar (und ausdruckbar/aushändigbar) sein,
+   vermutlich als Admin-Feature.
+4. (Platz für weitere Punkte, die im Gesprächsverlauf mit "Backlog:"
    markiert werden.)
