@@ -44,6 +44,11 @@ struct OnboardingContainerView: View {
 
     private var codeStep: some View {
         VStack(alignment: .leading, spacing: 16) {
+            PartnerLogoMark()
+                .frame(width: 64, height: 64)
+                .accessibilityLabel("Firmenlogo")
+                .frame(maxWidth: .infinity, alignment: .center)
+
             Text("Gruppen-Code")
                 .font(.title2.bold())
             Text("Gib den Beitrittscode für eure Labor-Gruppe ein — oder den Code, den euch die Apotheke/der Zulieferer genannt hat.")
@@ -67,10 +72,11 @@ struct OnboardingContainerView: View {
                 if isSubmitting {
                     ProgressView().frame(maxWidth: .infinity)
                 } else {
-                    Text("Weiter").frame(maxWidth: .infinity)
+                    Text("Weiter").foregroundStyle(.black).frame(maxWidth: .infinity)
                 }
             }
             .buttonStyle(.borderedProminent)
+            .tint(PartnerBrand.yellow)
             .controlSize(.large)
             .disabled(code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
         }
@@ -102,10 +108,11 @@ struct OnboardingContainerView: View {
                 if isSubmitting {
                     ProgressView().frame(maxWidth: .infinity)
                 } else {
-                    Text("Beitreten").frame(maxWidth: .infinity)
+                    Text("Beitreten").foregroundStyle(.black).frame(maxWidth: .infinity)
                 }
             }
             .buttonStyle(.borderedProminent)
+            .tint(PartnerBrand.yellow)
             .controlSize(.large)
             .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                       || abbreviation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -136,10 +143,11 @@ struct OnboardingContainerView: View {
                 if isSubmitting {
                     ProgressView().frame(maxWidth: .infinity)
                 } else {
-                    Text("Beitreten").frame(maxWidth: .infinity)
+                    Text("Beitreten").foregroundStyle(.black).frame(maxWidth: .infinity)
                 }
             }
             .buttonStyle(.borderedProminent)
+            .tint(PartnerBrand.yellow)
             .controlSize(.large)
             .disabled(firmName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
 

@@ -5,10 +5,9 @@ struct AboutView: View {
         List {
             Section {
                 HStack {
-                    Image(systemName: "cross.vial.fill")
-                        .font(.system(size: 32))
-                        .foregroundStyle(Color.accentColor)
+                    PartnerLogoMark()
                         .frame(width: 44, height: 44)
+                        .accessibilityHidden(true)
                     VStack(alignment: .leading) {
                         Text("Probenfahrt")
                             .font(.title3.bold())

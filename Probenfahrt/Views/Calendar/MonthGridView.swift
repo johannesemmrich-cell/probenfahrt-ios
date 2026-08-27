@@ -90,7 +90,7 @@ struct MonthGridView: View {
             }
         }
         .frame(maxWidth: .infinity, minHeight: 52)
-        .background(calendar.isDateInToday(date) ? Color.accentColor.opacity(0.15) : Color.clear)
+        .background(calendar.isDateInToday(date) ? PartnerBrand.yellow.opacity(0.22) : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 }
