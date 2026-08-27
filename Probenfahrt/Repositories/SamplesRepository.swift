@@ -15,6 +15,10 @@ protocol SamplesRepository {
     /// A single location's report for one calendar day, e.g. so a pharmacy
     /// account can see its own current status.
     func report(locationID: UUID, day: Date) async throws -> SampleReport?
+    /// All reports for a group's locations within one calendar month — the
+    /// admin Proben-Auswertung PDF's data source, mirroring
+    /// SurveyRepository.entriesWithDates(inMonth:year:groupID:).
+    func reports(groupID: UUID, inMonth month: Int, year: Int) async throws -> [SampleReport]
     func setHasSamples(_ hasSamples: Bool, locationID: UUID, day: Date) async throws
     /// Cleans up a location created via `findOrCreateLocation` (and all of
     /// its reports) once it's no longer needed — e.g. when a DevMode
@@ -62,6 +66,14 @@ final class SwiftDataSamplesRepository: SamplesRepository {
         return try context.fetch(FetchDescriptor<SampleReport>(predicate: #Predicate<SampleReport> {
             $0.locationID == locationID && $0.day == normalizedDay
         })).first
+    }
+
+    func reports(groupID: UUID, inMonth month: Int, year: Int) async throws -> [SampleReport] {
+        let calendar = Calendar.current
+        let all = try context.fetch(FetchDescriptor<SampleReport>(predicate: #Predicate<SampleReport> { $0.groupID == groupID }))
+        return all.filter {
+            calendar.component(.year, from: $0.day) == year && calendar.component(.month, from: $0.day) == month
+        }
     }
 
     func setHasSamples(_ hasSamples: Bool, locationID: UUID, day: Date) async throws {

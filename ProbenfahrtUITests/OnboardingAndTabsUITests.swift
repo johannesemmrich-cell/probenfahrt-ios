@@ -72,7 +72,17 @@ final class OnboardingAndTabsUITests: XCTestCase {
         adminToggle.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
         XCTAssertEqual(adminToggle.value as? String, "1")
         XCTAssertTrue(app.staticTexts["Monatsauswertung (PDF)"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Proben-Auswertung (PDF)"].waitForExistence(timeout: 5))
         snap(app, "5-einstellungen")
+
+        // Proben-Auswertung (PDF) — same pattern as Monatsauswertung, just
+        // aggregating days-with-samples per Apotheke/Labor instead of trips.
+        app.staticTexts["Proben-Auswertung (PDF)"].tap()
+        XCTAssertTrue(app.navigationBars["Proben-Auswertung"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Apotheke Sonnenschein"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["PDF teilen/speichern"].waitForExistence(timeout: 5))
+        snap(app, "5b-proben-auswertung")
+        app.navigationBars.buttons.firstMatch.tap()
 
         // Über/Datenschutz + Emmrich-Banner sitzen unten, außerhalb des ersten Screens.
         app.swipeUp()

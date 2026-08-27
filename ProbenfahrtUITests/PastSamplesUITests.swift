@@ -1,16 +1,15 @@
 import XCTest
 
-/// Demonstrates the day-based Proben reporting end to end using the seeded
-/// demo data (3 locations with samples "today", 3 without, none for any
-/// other day): a fresh lab-team member sees today's reports in the "Proben"
-/// tab, and browsing to the previous day shows an empty list since no
-/// report exists for that day.
-final class SamplesDayNavigationUITests: XCTestCase {
+/// Demonstrates "Vergangene Proben" end to end using the seeded demo data
+/// (3 locations with samples "today", 3 without): today's reports are
+/// reachable both via the "Proben" tab directly and via "Vergangen" →
+/// this week's block → the day card → the full detail split.
+final class PastSamplesUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
     }
 
-    func testTodaysReportsShowUpAndPastDayIsEmpty() throws {
+    func testTodaysReportsAreReachableThroughTheWeekBlock() throws {
         let app = XCUIApplication()
         app.launchArguments += ["-UITest_ResetState"]
         app.launch()
@@ -34,15 +33,18 @@ final class SamplesDayNavigationUITests: XCTestCase {
         tabBar.buttons["Proben"].tap()
 
         XCTAssertTrue(app.staticTexts["Proben vorhanden (3)"].waitForExistence(timeout: 5))
-        snap(app, "day-nav-1-today-with-samples")
+        snap(app, "past-1-today-tab")
 
-        app.buttons["Vorheriger Tag"].tap()
-        XCTAssertTrue(app.staticTexts["Keine Meldungen an diesem Tag"].waitForExistence(timeout: 5))
-        snap(app, "day-nav-2-yesterday-empty")
+        app.buttons["Vergangen"].tap()
+        XCTAssertTrue(app.navigationBars["Vergangene Proben"].waitForExistence(timeout: 5))
+        let todaysCard = app.staticTexts["3 mit Proben · 3 ohne Proben"]
+        XCTAssertTrue(todaysCard.waitForExistence(timeout: 5))
+        snap(app, "past-2-week-block")
 
-        app.buttons["Heute"].tap()
+        todaysCard.tap()
         XCTAssertTrue(app.staticTexts["Proben vorhanden (3)"].waitForExistence(timeout: 5))
-        snap(app, "day-nav-3-back-to-today")
+        XCTAssertTrue(app.staticTexts["Keine Proben (3)"].waitForExistence(timeout: 5))
+        snap(app, "past-3-day-detail")
     }
 
     private func snap(_ app: XCUIApplication, _ name: String) {

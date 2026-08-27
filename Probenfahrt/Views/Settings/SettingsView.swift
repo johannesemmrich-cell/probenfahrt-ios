@@ -59,6 +59,9 @@ struct SettingsView: View {
                         NavigationLink("Monatsauswertung (PDF)") {
                             AdminReportView(currentUser: currentUser)
                         }
+                        NavigationLink("Proben-Auswertung (PDF)") {
+                            SamplesReportView(currentUser: currentUser)
+                        }
                         NavigationLink("Mitglieder verwalten") {
                             TeamMembersView(currentUser: currentUser)
                         }
