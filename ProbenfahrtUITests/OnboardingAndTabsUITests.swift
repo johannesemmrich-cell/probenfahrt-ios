@@ -30,6 +30,12 @@ final class OnboardingAndTabsUITests: XCTestCase {
 
         app.buttons["Beitreten"].tap()
 
+        // Erster Start nach Reset zeigt einmalig die Feature-Tour
+        // (FeatureOnboardingView) — wegtippen, bevor die Tableiste geprüft wird.
+        let skipOnboardingButton = app.buttons["Überspringen"]
+        XCTAssertTrue(skipOnboardingButton.waitForExistence(timeout: 10))
+        skipOnboardingButton.tap()
+
         let tabBar = app.tabBars.firstMatch
         XCTAssertTrue(tabBar.waitForExistence(timeout: 5))
         XCTAssertTrue(tabBar.buttons["Umfragen"].exists)

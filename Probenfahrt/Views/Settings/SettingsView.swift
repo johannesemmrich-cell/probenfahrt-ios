@@ -18,6 +18,7 @@ struct SettingsView: View {
     @State private var showDeveloperUnlock = false
     @State private var adminCode = ""
     @State private var adminCodeError: String?
+    @State private var isShowingFeatureOnboarding = false
 
     private let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
     private let buildNumber = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
@@ -77,6 +78,9 @@ struct SettingsView: View {
                     }
                     NavigationLink("Datenschutz") {
                         PrivacyView()
+                    }
+                    Button("Onboarding erneut anzeigen") {
+                        isShowingFeatureOnboarding = true
                     }
                 }
 
@@ -151,6 +155,11 @@ struct SettingsView: View {
             }
             .sheet(isPresented: $showDeveloperUnlock) {
                 DeveloperUnlockSheet(isPresented: $showDeveloperUnlock)
+            }
+            .fullScreenCover(isPresented: $isShowingFeatureOnboarding) {
+                FeatureOnboardingView(accountKind: isPharmacyAccount ? .pharmacy : .labTeam) {
+                    isShowingFeatureOnboarding = false
+                }
             }
         }
     }

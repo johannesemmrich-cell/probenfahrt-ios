@@ -7,6 +7,8 @@ struct RootTabView: View {
     @Environment(DevModeStore.self) private var devMode
 
     @State private var currentUser: User?
+    @State private var featureOnboarding = FeatureOnboardingStore()
+    @State private var isShowingFeatureOnboarding = false
 
     private var effectiveAccountKind: AccountKind {
         devMode.isPharmacyModeActive ? .pharmacy : (currentUser?.accountKind ?? .labTeam)
@@ -23,6 +25,12 @@ struct RootTabView: View {
             } else {
                 ProgressView()
                     .task { await loadCurrentUser() }
+            }
+        }
+        .fullScreenCover(isPresented: $isShowingFeatureOnboarding) {
+            FeatureOnboardingView(accountKind: effectiveAccountKind) {
+                featureOnboarding.hasSeenFeatureOnboarding = true
+                isShowingFeatureOnboarding = false
             }
         }
     }
@@ -69,5 +77,8 @@ struct RootTabView: View {
         guard let id = session.currentUserID else { return }
         let repository = SwiftDataUserRepository(context: modelContext)
         currentUser = try? await repository.user(id: id)
+        if currentUser != nil, !featureOnboarding.hasSeenFeatureOnboarding {
+            isShowingFeatureOnboarding = true
+        }
     }
 }

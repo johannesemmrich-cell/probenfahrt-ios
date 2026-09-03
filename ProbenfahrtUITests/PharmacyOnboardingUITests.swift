@@ -67,6 +67,12 @@ final class PharmacyOnboardingUITests: XCTestCase {
         codeField.typeText("Isg#45krusgL.")
         app.buttons["Weiter"].tap()
 
+        // Erster Start nach Reset zeigt einmalig die Feature-Tour
+        // (FeatureOnboardingView) — wegtippen, bevor die Tableiste geprüft wird.
+        let skipOnboardingButton = app.buttons["Überspringen"]
+        XCTAssertTrue(skipOnboardingButton.waitForExistence(timeout: 5))
+        skipOnboardingButton.tap()
+
         let tabBar = app.tabBars.firstMatch
         XCTAssertTrue(tabBar.waitForExistence(timeout: 5))
         XCTAssertTrue(tabBar.buttons["Umfragen"].exists)
