@@ -1,15 +1,13 @@
 import SwiftUI
-import SwiftData
 
 struct SamplesListView: View {
     let currentUser: User
 
-    @Environment(\.modelContext) private var modelContext
     @Environment(DevModeStore.self) private var devMode
     @State private var locations: [SampleLocation] = []
     @State private var reports: [SampleReport] = []
 
-    private var samplesRepository: SamplesRepository { SwiftDataSamplesRepository(context: modelContext) }
+    private var samplesRepository: SamplesRepository { CloudKitSamplesRepository() }
 
     private var withSamples: [SampleDayGrouping.Entry] {
         SampleDayGrouping.withSamples(locations: locations, reports: reports)

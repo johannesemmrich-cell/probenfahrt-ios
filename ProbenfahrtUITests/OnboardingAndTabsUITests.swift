@@ -79,7 +79,10 @@ final class OnboardingAndTabsUITests: XCTestCase {
         // aggregating days-with-samples per Apotheke/Labor instead of trips.
         app.staticTexts["Proben-Auswertung (PDF)"].tap()
         XCTAssertTrue(app.navigationBars["Proben-Auswertung"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Apotheke Sonnenschein"].waitForExistence(timeout: 5))
+        // Proben-Daten kommen jetzt aus CloudKit statt aus lokal geseedeten
+        // SwiftData-Mocks (BACKLOG #1/#3) — im UI-Testlauf ohne iCloud-Account
+        // ist die Liste leer, daher kein Assert mehr auf eine konkrete
+        // Apotheke, nur noch dass der Screen inkl. PDF-Export lädt.
         XCTAssertTrue(app.staticTexts["PDF teilen/speichern"].waitForExistence(timeout: 5))
         snap(app, "5b-proben-auswertung")
         app.navigationBars.buttons.firstMatch.tap()

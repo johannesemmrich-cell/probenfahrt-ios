@@ -45,7 +45,6 @@ enum MockDataSeeder {
 
         seedSurveyDays(groupID: group.id, users: users, context: context)
         seedChatMessages(groupID: group.id, users: users, context: context)
-        seedSampleLocations(groupID: group.id, context: context)
 
         try? context.save()
     }
@@ -119,26 +118,6 @@ enum MockDataSeeder {
         ]
         for (sender, recipient, text, hoursAgo) in dmMessages {
             context.insert(ChatMessage(groupID: groupID, senderID: sender.id, recipientID: recipient.id, text: text, createdAt: at(hoursAgo: hoursAgo)))
-        }
-    }
-
-    /// Seeds both the location identities and a report for the current day —
-    /// since reports are per-day now, this demo data only shows up as
-    /// "today's" status on the day the store is first created.
-    private static func seedSampleLocations(groupID: UUID, context: ModelContext) {
-        let locations: [(String, String, Bool, String)] = [
-            ("Apotheke Sonnenschein", "Hauptstraße 12", true, "Ja, wir haben Proben"),
-            ("Labor Nordstadt", "Industrieweg 4", false, ""),
-            ("Apotheke am Markt", "Marktplatz 3", true, "Ja, wir haben Proben"),
-            ("Zentrallabor Ost", "Ostring 88", false, ""),
-            ("Apotheke Hirsch", "Bahnhofstraße 21", false, ""),
-            ("Labor Weststadt", "Westallee 9", true, "Ja, mehrere Proben abholbereit"),
-        ]
-        let today = SampleReport.normalizedDay(.now)
-        for (name, address, hasSamples, note) in locations {
-            let location = SampleLocation(groupID: groupID, name: name, address: address)
-            context.insert(location)
-            context.insert(SampleReport(locationID: location.id, groupID: groupID, day: today, hasSamples: hasSamples, statusNote: note))
         }
     }
 }

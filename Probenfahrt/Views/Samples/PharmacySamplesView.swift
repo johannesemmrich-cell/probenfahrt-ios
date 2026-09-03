@@ -1,5 +1,4 @@
 import SwiftUI
-import SwiftData
 
 /// The entire Proben experience for a self-service pharmacy/supplier account
 /// (AccountKind.pharmacy): today's date, and one tap to say whether they
@@ -10,13 +9,12 @@ import SwiftData
 struct PharmacySamplesView: View {
     let currentUser: User
 
-    @Environment(\.modelContext) private var modelContext
     @Environment(DevModeStore.self) private var devMode
     @State private var location: SampleLocation?
     @State private var todaysReport: SampleReport?
     @State private var isSaving = false
 
-    private var samplesRepository: SamplesRepository { SwiftDataSamplesRepository(context: modelContext) }
+    private var samplesRepository: SamplesRepository { CloudKitSamplesRepository() }
     private var today: Date { SampleReport.normalizedDay(.now) }
 
     var body: some View {

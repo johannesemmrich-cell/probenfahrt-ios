@@ -1,5 +1,4 @@
 import SwiftUI
-import SwiftData
 
 /// Admin-only monthly Proben report as a shareable PDF, e.g.
 /// "Apotheke Sonnenschein: 12 Tage mit Proben" — the Proben equivalent of
@@ -9,12 +8,11 @@ import SwiftData
 struct SamplesReportView: View {
     let currentUser: User
 
-    @Environment(\.modelContext) private var modelContext
     @State private var referenceMonth = Calendar.current.startOfDay(for: .now)
     @State private var lines: [SamplesReportGenerator.ReportLine] = []
     @State private var pdfURL: URL?
 
-    private var samplesRepository: SamplesRepository { SwiftDataSamplesRepository(context: modelContext) }
+    private var samplesRepository: SamplesRepository { CloudKitSamplesRepository() }
 
     private var monthTitle: String {
         referenceMonth.formatted(.dateTime.month(.wide).year().locale(.app))

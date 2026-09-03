@@ -1,5 +1,4 @@
 import SwiftUI
-import SwiftData
 
 /// Past Proben reports grouped into Mon–Sun week blocks — same "Wochenblock"
 /// idea as Umfragen's PastSurveysView. Includes the current week (so a day
@@ -9,13 +8,12 @@ import SwiftData
 struct PastSamplesView: View {
     let currentUser: User
 
-    @Environment(\.modelContext) private var modelContext
     @State private var blocks: [SampleWeekWindow.WeekBlock] = []
     @State private var locations: [SampleLocation] = []
     @State private var reportsByDay: [Date: [SampleReport]] = [:]
     @State private var hasLoadedOnce = false
 
-    private var samplesRepository: SamplesRepository { SwiftDataSamplesRepository(context: modelContext) }
+    private var samplesRepository: SamplesRepository { CloudKitSamplesRepository() }
 
     private func hasReports(on day: Date) -> Bool {
         !(reportsByDay[day] ?? []).isEmpty
@@ -50,11 +48,17 @@ struct PastSamplesView: View {
         guard let groupID = currentUser.groupID else { return }
         do {
             locations = try await samplesRepository.locations(groupID: groupID)
+            // Blocks are ordered most-recent-first (see SampleWeekWindowTests),
+            // so the earliest day is the last block's first day and the
+            // latest is the first block's last day.
             let newBlocks = SampleWeekWindow.pastWeekBlocks(from: .now)
             var newReportsByDay: [Date: [SampleReport]] = [:]
-            for block in newBlocks {
-                for day in block.days {
-                    newReportsByDay[day] = try await samplesRepository.reports(groupID: groupID, day: day)
+            if let earliest = newBlocks.last?.days.first, let latest = newBlocks.first?.days.last {
+                // One range query for the whole window instead of one
+                // per day (used to be up to 56 sequential network calls).
+                let allReports = try await samplesRepository.reports(groupID: groupID, from: earliest, to: latest)
+                for report in allReports {
+                    newReportsByDay[report.day, default: []].append(report)
                 }
             }
             blocks = newBlocks

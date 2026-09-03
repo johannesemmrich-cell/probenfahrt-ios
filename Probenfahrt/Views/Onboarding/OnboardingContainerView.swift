@@ -22,7 +22,7 @@ struct OnboardingContainerView: View {
     @State private var isSubmitting = false
 
     private var userRepository: UserRepository { SwiftDataUserRepository(context: modelContext) }
-    private var samplesRepository: SamplesRepository { SwiftDataSamplesRepository(context: modelContext) }
+    private var samplesRepository: SamplesRepository { CloudKitSamplesRepository() }
 
     var body: some View {
         NavigationStack {

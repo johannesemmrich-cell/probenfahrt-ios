@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Probenfahrt · Proben melden</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f2f2f7;
+    color: #1c1c1e;
+    padding: 24px;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { background: #000; color: #f2f2f7; }
+    .card { background: #1c1c1e; }
+    .muted { color: #8e8e93; }
+    button.secondary { background: #2c2c2e; color: #f2f2f7; border-color: #3a3a3c; }
+  }
+  .card {
+    width: 100%;
+    max-width: 420px;
+    background: #fff;
+    border-radius: 20px;
+    padding: 32px 24px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+    text-align: center;
+  }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  .muted { color: #6e6e73; font-size: 0.95rem; margin: 0 0 24px; }
+  .date { font-weight: 600; margin-bottom: 24px; }
+  button {
+    display: block;
+    width: 100%;
+    padding: 16px;
+    font-size: 1.05rem;
+    font-weight: 600;
+    border-radius: 14px;
+    border: none;
+    margin-bottom: 12px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+  button.primary { background: #34c759; color: #fff; }
+  button.secondary { background: #f2f2f7; color: #1c1c1e; border: 1px solid #d1d1d6; }
+  .status { margin-top: 16px; font-size: 0.95rem; font-weight: 600; }
+  .status.yes { color: #34c759; }
+  .status.no { color: #6e6e73; }
+  .spinner { font-size: 0.95rem; color: #6e6e73; }
+  .error { color: #ff3b30; font-size: 0.95rem; }
+  .brand { font-size: 0.75rem; color: #a1a1a6; margin-top: 28px; }
+</style>
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="spinner" id="loading">Lade…</div>
+  </div>
+
+<script>
+(function () {
+  const card = document.getElementById("card");
+
+  function render(html) {
+    card.innerHTML = html;
+  }
+
+  function showError(message) {
+    render(
+      '<h1>Probenfahrt</h1>' +
+      '<p class="error">' + message + '</p>'
+    );
+  }
+
+  function todayLocal() {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  }
+
+  function formattedDate(date) {
+    return date.toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get("token");
+  // ?token=demo shows the page with fake data and no network calls at all
+  // — for looking at the design without any backend set up.
+  const isDemo = token === "demo";
+
+  if (!isDemo && !token) {
+    showError("Kein Apotheken-Code in diesem Link gefunden. Bitte den QR-Code erneut scannen.");
+    return;
+  }
+
+  let currentLocation = null; // { id, groupID, name }
+  let demoHasSamples = null; // only used when isDemo
+  const today = todayLocal();
+
+  function renderPharmacy(hasSamples) {
+    render(
+      '<h1>' + escapeHtml(currentLocation.name) + '</h1>' +
+      '<p class="muted">Habt ihr heute Proben für uns?</p>' +
+      '<p class="date">' + formattedDate(today) + '</p>' +
+      '<button class="primary" id="yesBtn" ' + (hasSamples === true ? "disabled" : "") + '>Ja, wir haben Proben</button>' +
+      '<button class="secondary" id="noBtn" ' + (hasSamples === false ? "disabled" : "") + '>Keine Proben</button>' +
+      '<div id="statusLine" class="status ' + (hasSamples === true ? "yes" : hasSamples === false ? "no" : "") + '">' +
+        (hasSamples === true ? "Aktueller Status: Proben vorhanden" :
+         hasSamples === false ? "Aktueller Status: Keine Proben" : "") +
+      '</div>' +
+      '<div class="brand">Probenfahrt</div>'
+    );
+    document.getElementById("yesBtn").addEventListener("click", function () { submit(true); });
+    document.getElementById("noBtn").addEventListener("click", function () { submit(false); });
+  }
+
+  async function submit(hasSamples) {
+    const yesBtn = document.getElementById("yesBtn");
+    const noBtn = document.getElementById("noBtn");
+    yesBtn.disabled = true;
+    noBtn.disabled = true;
+
+    if (isDemo) {
+      demoHasSamples = hasSamples;
+      renderPharmacy(hasSamples);
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token: token,
+          hasSamples: hasSamples
+        })
+      });
+      if (!response.ok) throw new Error("save failed");
+      renderPharmacy(hasSamples);
+    } catch (e) {
+      renderPharmacy(null);
+      const statusLine = document.getElementById("statusLine");
+      statusLine.className = "status error";
+      statusLine.textContent = "Konnte nicht gespeichert werden. Bitte erneut versuchen.";
+    }
+  }
+
+  async function start() {
+    if (isDemo) {
+      currentLocation = { id: "demo", groupID: null, name: "Apotheke Musterstadt (Demo)" };
+      renderPharmacy(demoHasSamples);
+      return;
+    }
+    try {
+      const response = await fetch("/api/pharmacy?token=" + encodeURIComponent(token));
+      if (response.status === 404) {
+        showError("Unbekannter Apotheken-Code. Bitte beim Laborteam melden.");
+        return;
+      }
+      if (!response.ok) {
+        showError("Verbindung fehlgeschlagen. Bitte Internetverbindung prüfen und die Seite neu laden.");
+        return;
+      }
+      const data = await response.json();
+      currentLocation = data.location;
+      renderPharmacy(data.hasSamples);
+    } catch (e) {
+      showError("Verbindung fehlgeschlagen. Bitte Internetverbindung prüfen und die Seite neu laden.");
+    }
+  }
+
+  start();
+})();
+</script>
+</body>
+</html>

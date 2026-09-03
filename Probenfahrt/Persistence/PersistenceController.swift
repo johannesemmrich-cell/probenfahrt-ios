@@ -30,7 +30,14 @@ enum PersistenceController {
         if isUITesting, let bundleID = Bundle.main.bundleIdentifier {
             UserDefaults.standard.removePersistentDomain(forName: bundleID)
         }
-        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: isUITesting)
+        // cloudKitDatabase: .none — without this, SwiftData sees the app's
+        // iCloud/CloudKit entitlement (added for CloudKitSamplesRepository,
+        // see Repositories/) and defaults to automatically mirroring *all*
+        // local models (Chat, Users, Umfragen...) into the private CloudKit
+        // database. That was never intended; only Proben goes through
+        // CloudKit, and does so via its own CKContainer-based repository,
+        // not SwiftData's sync.
+        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: isUITesting, cloudKitDatabase: .none)
         let container = try! ModelContainer(for: schema, configurations: [configuration])
         MockDataSeeder.seedIfNeeded(context: container.mainContext)
         return container

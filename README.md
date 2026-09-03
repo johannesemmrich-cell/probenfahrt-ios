@@ -4,14 +4,18 @@ Native iOS-App (SwiftUI) für ein Labor-Team: Wer fährt an welchem Tag Proben
 zum Labor bzw. holt sie ab. Umfragen, automatisch generierter Kalender,
 Proben-Status, Team-Chat und Einstellungen.
 
-Aktueller Stand: **Prototyp mit simulierten Mock-Daten** (lokal in
-SwiftData), kein echtes Backend/keine echte Mehrbenutzer-Synchronisierung
-(siehe [BACKLOG.md](./BACKLOG.md)).
+Aktueller Stand: Umfragen/Kalender/Chat/Mitglieder laufen weiterhin auf
+**lokalen SwiftData-Mock-Daten**. Der **Proben-Bereich hat seit
+2026-09-03 ein echtes Backend** (CloudKit, öffentliche Datenbank) inkl.
+QR-Code-Web-Check-in für Apotheken ohne App-Installation (siehe Abschnitt
+"CloudKit-Setup" unten und [BACKLOG.md](./BACKLOG.md)).
 
 ## Tech-Stack
 
 - SwiftUI, Swift 6, iOS 26+ (nur iPhone, Portrait)
-- SwiftData für lokale Persistenz (kein CloudKit-Sync in diesem Schritt)
+- SwiftData für lokale Persistenz (Umfragen/Kalender/Chat/Mitglieder).
+  Proben-Bereich (`SampleLocation`/`SampleReport`) läuft stattdessen über
+  CloudKit (öffentliche Datenbank) — siehe "CloudKit-Setup" unten.
 - Architektur: MVVM (`Models` / `Repositories` / `ViewModels` / `Views`)
 - Repository-Pattern: Views/ViewModels sprechen nur mit Repository-
   Protokollen, nie direkt mit SwiftData — später kann eine echte Backend-
@@ -53,6 +57,91 @@ auftritt: in Xcode oben rechts einfach auf ein Gerät mit einer anderen
 iOS-Runtime-Version wechseln (Window → Devices and Simulators zeigt
 installierte Runtimes). Kein Debugging-/Entwicklerkonto-Problem — separat
 geprüft (auch mit deaktiviertem "Debug executable" trat es weiter auf).
+
+## CloudKit-Setup (für den Proben-/Apotheken-Bereich)
+
+Der Proben-Bereich (`CloudKitSamplesRepository`) läuft gegen die
+**öffentliche** CloudKit-Datenbank des Containers
+`iCloud.com.johannesemmrich.probenfahrt` — nicht gegen SwiftData+CloudKit's
+automatischen Sync, der nur die *private* Datenbank eines einzelnen
+iCloud-Accounts spiegelt und damit weder das ganze Laborteam noch eine
+anonyme Web-Seite erreichen könnte.
+
+Folgende Schritte sind **einmalig, manuell im CloudKit Dashboard**
+(icloud.developer.apple.com) nötig — das kann ich nicht per Kommandozeile
+für dich erledigen, dafür gibt es keine API:
+
+1. **Xcode öffnen, Team wählen.** Beim ersten Öffnen von
+   `Probenfahrt.xcodeproj` unter Signing & Capabilities ein Entwicklerteam
+   auswählen (Automatic Signing ist schon konfiguriert). Xcode registriert
+   den iCloud-Container `iCloud.com.johannesemmrich.probenfahrt` dabei
+   automatisch bei deinem Account, falls er noch nicht existiert.
+2. **Schema entsteht automatisch beim ersten Speichern.** Sobald die App
+   einmal läuft (echtes Gerät oder Simulator mit iCloud-Account) und z. B.
+   über "Apotheken verwalten" eine Apotheke anlegt, erzeugt CloudKit die
+   Record-Typen `SampleLocation`/`SampleReport` in der
+   **Development**-Umgebung automatisch mit den passenden Feldern.
+3. **Felder als "Queryable" markieren.** Im Dashboard unter Schema:
+   - `SampleLocation`: `groupID`, `locationID`, `token`
+   - `SampleReport`: `groupID`, `locationID`, `day`
+   Ohne das schlagen Abfragen mit einer klaren Fehlermeldung fehl ("field
+   ... is not marked queryable") — dann hier nachtragen.
+4. **Server-to-Server-Key statt "World"-Rolle.** Ursprünglich war geplant,
+   dass die Web-Seite direkt (anonym, per API-Token) über CloudKit JS
+   schreibt — das geht aber nicht: die `_world`-Sicherheitsrolle lässt sich
+   im Dashboard nur auf **Read** setzen, Create/Write sind für anonyme
+   Clients strukturell gesperrt (Apple-Plattform-Einschränkung, kein
+   Konfigurationsfehler). Stattdessen läuft jetzt ein kleiner lokaler Proxy
+   (`web/proxy_server.py`), der über einen **Server-to-Server-Key**
+   schreibt — Apples vorgesehener Mechanismus für "Web-Formular schreibt in
+   CloudKit, ohne dass sich jemand mit Apple-ID einloggt". Setup:
+   - Falls noch nicht geschehen: `cd web && openssl ecparam -name prime256v1 -genkey -noout -out eckey.pem`
+     (Datei bleibt lokal, ist in `.gitignore`).
+   - Public Key anzeigen: `openssl ec -in web/eckey.pem -pubout`
+   - Dashboard → API Access → **Server-to-Server Keys** → neuen Key
+     erzeugen, den Public Key dort einfügen → man bekommt eine **Key ID**.
+   - `web/server_config.py` aus `web/server_config.example.py` kopieren
+     (falls noch nicht vorhanden) und dort `KEY_ID` eintragen.
+   - Die `_world`-Rolle selbst braucht nichts weiter — der Proxy umgeht sie
+     komplett, Lesen *und* Schreiben laufen beide über den privilegierten
+     Server-to-Server-Key.
+5. **Vor dem echten TestFlight-Rollout: Schema nach Production deployen.**
+   Ein Release-Build (= was TestFlight bekommt) spricht automatisch die
+   **Production**-Umgebung an, nicht Development. Im Dashboard: "Deploy
+   Schema Changes" von Development nach Production ausführen. In
+   `web/server_config.py` `ENVIRONMENT` auf `"production"` umstellen und im
+   Dashboard einen zweiten, production-spezifischen Server-to-Server-Key
+   erzeugen (Keys sind pro Umgebung getrennt).
+6. **`_icloud`-Rolle: Write ergänzen.** Beim Einrichten ist aufgefallen,
+   dass `_icloud` (die App mit echtem iCloud-Account) nur **Create**
+   hatte, nicht **Write** — reicht fürs erste Anlegen, aber nicht fürs
+   Ändern eines schon bestehenden Reports (z. B. erst "Ja", später am
+   selben Tag "Nein" antippen). Security Roles → `_icloud` →
+   `SampleLocation` + `SampleReport` → zusätzlich **Write** anhaken.
+
+Ich konnte diese Schritte nicht selbst ausführen oder live gegen echte
+Apple-Server testen (kein Zugriff auf Xcode-GUI oder das CloudKit
+Dashboard) — der Proxy hat in einem lokalen Test mit Platzhalter-Key schon
+korrekt mit Apples Servern gesprochen (Antwort: `AUTHENTICATION_FAILED`,
+also formal richtig aufgebaute Anfrage, nur der Key existiert noch nicht) —
+das ist ein gutes Zeichen, ersetzt aber keinen echten End-zu-Ende-Test mit
+gültigem Key.
+
+### Apotheken-Web-Check-in lokal starten
+
+```bash
+cd web
+./serve.sh          # Standardport 8080, siehe Konsolen-Ausgabe für die LAN-IP
+```
+
+Startet `proxy_server.py` (statische Seite + CloudKit-Schreibzugriff über
+den Server-to-Server-Key aus `server_config.py`) — bricht mit einer klaren
+Fehlermeldung ab, falls `server_config.py` noch fehlt.
+
+QR-Codes dafür entstehen in der App unter **Einstellungen → Admin →
+Apotheken verwalten** → Apotheke antippen. Die Basis-URL für QR-Codes ist
+dort editierbar (Default `http://localhost:8080` — für echtes Scannen per
+Handy im selben WLAN durch die LAN-IP ersetzen, siehe Hinweistext dort).
 
 ## Test-Zugänge (Mock-Daten)
 
@@ -135,10 +224,33 @@ einer sinnvollen Annahme beantwortet werden.
 - **Bundle-ID / Konventionen**: an Sunwake/GymTrack angelehnt
   (`com.johannesemmrich.probenfahrt`, XcodeGen, iOS 26 Deployment-Target,
   Swift 6, nur iPhone/Portrait, `.xcodeproj` nicht eingecheckt).
-- **Kein CloudKit in diesem Schritt**: Die Spezifikation verlangt explizit
-  nur simulierte Mock-Daten, kein echtes Backend. Lokale SwiftData-
-  Persistenz ohne Sync erfüllt das; CloudKit- oder Supabase/Firebase-Sync
-  ist Backlog #3.
+- **CloudKit nur für den Proben-Bereich, nicht für die ganze App**
+  (Stand 2026-09-03): Backlog #1 verlangt echte Backend-Anbindung
+  allgemein, aber der konkrete Auslöser heute Abend war ausschließlich der
+  QR-Code-Web-Check-in für Apotheken (Backlog #3), der ohne geteilten
+  Backend-Zugriff nicht geht. Umfragen/Kalender/Chat/Mitglieder bleiben
+  bewusst auf lokalem SwiftData, um den Umbau nicht in einer Nacht auf die
+  ganze App auszuweiten — Migration der übrigen Bereiche ist ein separater
+  Schritt, wenn explizit gewünscht.
+- **CloudKit statt Supabase/Firebase gewählt**: kein neuer Account nötig
+  (läuft über das ohnehin für TestFlight nötige Apple-Entwicklerkonto),
+  dafür ist CloudKits Public-Database-Sicherheitsmodell pro Record-Typ statt
+  pro Datensatz granular — siehe Abschnitt "CloudKit-Setup" oben für die
+  daraus resultierende bewusste Einschränkung beim anonymen Web-Zugriff.
+- **Drei UI-Tests an die CloudKit-Umstellung angepasst**: `PastSamplesUITests`
+  und `PharmacyOnboardingUITests.testPharmacyCodeLeadsToReducedTwoTabApp`
+  übersprungen (`XCTSkip`), ein Assert in `OnboardingAndTabsUITests`
+  entfernt. Alle drei hingen direkt oder indirekt an den lokal geseedeten
+  Mock-Apotheken (`MockDataSeeder.seedSampleLocations`, jetzt entfernt) bzw.
+  an einem live erfolgreichen CloudKit-Ja/Nein-Tap — ohne signiertes
+  iCloud-Testkonto im UI-Test-Simulator ist der Proben-Tab-Inhalt nicht
+  mehr deterministisch reproduzierbar. (Eine erste Version dieser Notiz
+  hatte nur zwei der drei betroffenen Tests erwähnt — beim dritten,
+  `PharmacyOnboardingUITests`, hätte "Ja, wir haben Proben" antippen +
+  Status-Assert im CI-Simulator ebenso unzuverlässig fehlschlagen können;
+  von einer unabhängigen Verifikation gefunden und nachträglich behoben.)
+  Der Rest der Klickpfad-Tests (Onboarding, alle 5 Tabs, Admin-Vorschau,
+  Dev-Password-Bypass) bleibt unverändert grün.
 - **Onboarding-Reihenfolge**: Der Code wird zuerst erfasst, weil er
   entscheidet, welcher Identitäts-Schritt danach kommt (Name+Kürzel fürs
   Laborteam vs. nur Firmenname für Apotheken) — Kürzel-Eindeutigkeit wird

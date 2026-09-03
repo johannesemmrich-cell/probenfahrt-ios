@@ -23,7 +23,7 @@ struct SettingsView: View {
     private let buildNumber = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
 
     private var userRepository: UserRepository { SwiftDataUserRepository(context: modelContext) }
-    private var samplesRepository: SamplesRepository { SwiftDataSamplesRepository(context: modelContext) }
+    private var samplesRepository: SamplesRepository { CloudKitSamplesRepository() }
 
     private var isAdmin: Bool { isEffectiveAdmin(user: currentUser, adminPreview: adminPreview, devMode: devMode) }
     private var isFullAdmin: Bool { Probenfahrt.isFullAdmin(user: currentUser, adminPreview: adminPreview, devMode: devMode) }
@@ -64,6 +64,9 @@ struct SettingsView: View {
                         }
                         NavigationLink("Mitglieder verwalten") {
                             TeamMembersView(currentUser: currentUser)
+                        }
+                        NavigationLink("Apotheken verwalten") {
+                            PharmacyManagementView(currentUser: currentUser)
                         }
                     }
                 }

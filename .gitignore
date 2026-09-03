@@ -12,3 +12,9 @@ DerivedData/
 
 # macOS
 .DS_Store
+
+# CloudKit Server-to-Server private key + server-only config — never commit
+# (see web/README setup steps)
+web/eckey.pem
+web/server_config.py
+__pycache__/
