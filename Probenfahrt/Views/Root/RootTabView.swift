@@ -4,6 +4,7 @@ struct RootTabView: View {
     @Environment(SessionStore.self) private var session
     @Environment(DevModeStore.self) private var devMode
     @Environment(UnreadMessagesStore.self) private var unreadMessages
+    @Environment(SurveySignupBadgeStore.self) private var surveyBadge
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var currentUser: User?
@@ -36,6 +37,7 @@ struct RootTabView: View {
         .onChange(of: scenePhase) {
             guard scenePhase == .active, let currentUser else { return }
             Task { await unreadMessages.refresh(currentUser: currentUser) }
+            Task { await surveyBadge.refresh(currentUser: currentUser) }
         }
     }
 
@@ -43,6 +45,7 @@ struct RootTabView: View {
         TabView {
             SurveysView(currentUser: currentUser)
                 .tabItem { Label("Umfragen", systemImage: "list.bullet.clipboard") }
+                .badge(surveyBadge.count)
 
             CalendarView(currentUser: currentUser)
                 .tabItem { Label("Kalender", systemImage: "calendar") }
@@ -97,11 +100,19 @@ struct RootTabView: View {
             isShowingFeatureOnboarding = true
         }
         await unreadMessages.refresh(currentUser: user)
+        await surveyBadge.refresh(currentUser: user)
         if let groupID = user.groupID {
             // Fire-and-forget: (re-)registering push subscriptions is a
             // background convenience, not something the tab UI needs to
             // block on.
             Task { await ChatPushSubscriptions.ensure(groupID: groupID, currentUserID: user.id) }
+            if user.accountKind == .labTeam {
+                // Only the lab team sees the Proben overview — pharmacy
+                // accounts report their own status but never see the rest
+                // of the team's, so a "Proben da" push wouldn't mean
+                // anything to them.
+                Task { await SamplesPushSubscriptions.ensure(groupID: groupID, currentUserID: user.id) }
+            }
         }
     }
 }

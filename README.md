@@ -104,7 +104,8 @@ für dich erledigen, dafür gibt es keine API:
    - `SurveyEntry`: `surveyDayID`, `groupID`
    - `ChatMessage`: `groupID`, `senderID`, `recipientID`
    - `SampleLocation`: `groupID`, `locationID`, `token`
-   - `SampleReport`: `groupID`, `locationID`, `day`
+   - `SampleReport`: `groupID`, `locationID`, `day`, `hasSamples` (das
+     Push-Abo für "Proben da" filtert live auf `hasSamples == 1`)
    Ohne das schlagen Abfragen mit einer klaren Fehlermeldung fehl ("field
    ... is not marked queryable") — dann hier nachtragen.
 5. **Server-to-Server-Key statt "World"-Rolle.** Ursprünglich war geplant,

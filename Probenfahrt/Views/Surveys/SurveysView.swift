@@ -4,6 +4,7 @@ struct SurveysView: View {
     let currentUser: User
 
     @Environment(DevModeStore.self) private var devMode
+    @Environment(SurveySignupBadgeStore.self) private var surveyBadge
 
     @State private var blocks: [SurveyWeekWindow.WeekBlock] = []
     @State private var rowsByBlock: [Date: [SurveyDayRow]] = [:]
@@ -72,6 +73,7 @@ struct SurveysView: View {
             rowsByBlock = [:]
         }
         hasLoadedOnce = true
+        surveyBadge.markChecked()
     }
 
     /// Flips the button/highlight immediately instead of waiting on the

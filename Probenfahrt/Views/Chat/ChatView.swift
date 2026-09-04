@@ -4,6 +4,7 @@ struct ChatView: View {
     let currentUser: User
 
     @Environment(DevModeStore.self) private var devMode
+    @Environment(UnreadMessagesStore.self) private var unreadMessages
     @State private var users: [User] = []
 
     private var userRepository: UserRepository { CloudKitUserRepository() }
@@ -21,6 +22,7 @@ struct ChatView: View {
                     } label: {
                         Label("Gruppen-Chat", systemImage: "person.3.fill")
                     }
+                    .badge(unreadMessages.unreadCount(forConversation: UnreadMessagesStore.groupConversationKey))
                 }
 
                 Section("Direktnachrichten") {
@@ -30,12 +32,16 @@ struct ChatView: View {
                         } label: {
                             Text(partner.name)
                         }
+                        .badge(unreadMessages.unreadCount(forConversation: partner.id.uuidString))
                     }
                 }
             }
             .navigationTitle("Chat")
             .developerFeedbackOverlay(isActive: devMode.isActive, screen: "Chat", feature: "Übersicht", element: "Liste")
             .task { await load() }
+            .onAppear {
+                Task { await unreadMessages.refresh(currentUser: currentUser) }
+            }
         }
     }
 

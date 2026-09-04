@@ -11,6 +11,10 @@ final class UnreadMessagesStore {
     static let groupConversationKey = "group"
 
     private(set) var unreadCount = 0
+    /// Keyed the same as `lastReadByConversation` (`groupConversationKey` or
+    /// a DM partner's `UUID.uuidString`) — lets ChatView show which specific
+    /// conversation has new messages, not just the total.
+    private(set) var unreadCountsByConversation: [String: Int] = [:]
 
     private var lastReadByConversation: [String: Date] {
         didSet {
@@ -29,6 +33,10 @@ final class UnreadMessagesStore {
         lastReadByConversation[conversationKey] ?? .distantPast
     }
 
+    func unreadCount(forConversation key: String) -> Int {
+        unreadCountsByConversation[key] ?? 0
+    }
+
     /// Call when a conversation is opened — its unread messages no longer
     /// count, so call `refresh` afterwards to update the badges.
     func markRead(conversationKey: String) {
@@ -39,24 +47,28 @@ final class UnreadMessagesStore {
     func refresh(currentUser: User, chatRepository: ChatRepository = CloudKitChatRepository()) async {
         guard let groupID = currentUser.groupID else {
             unreadCount = 0
+            unreadCountsByConversation = [:]
             return
         }
         do {
-            var total = 0
+            var countsByConversation: [String: Int] = [:]
 
             let groupMessages = try await chatRepository.groupMessages(groupID: groupID)
             let groupLastRead = lastRead(conversationKey: Self.groupConversationKey)
-            total += groupMessages.filter { $0.senderID != currentUser.id && $0.createdAt > groupLastRead }.count
+            countsByConversation[Self.groupConversationKey] =
+                groupMessages.filter { $0.senderID != currentUser.id && $0.createdAt > groupLastRead }.count
 
             let partnerIDs = try await chatRepository.conversationPartnerIDs(groupID: groupID, currentUserID: currentUser.id)
             for partnerID in partnerIDs {
                 let messages = try await chatRepository.directMessages(groupID: groupID, between: currentUser.id, and: partnerID)
                 let partnerLastRead = lastRead(conversationKey: partnerID.uuidString)
-                total += messages.filter { $0.senderID == partnerID && $0.createdAt > partnerLastRead }.count
+                countsByConversation[partnerID.uuidString] =
+                    messages.filter { $0.senderID == partnerID && $0.createdAt > partnerLastRead }.count
             }
 
-            unreadCount = total
-            try? await UNUserNotificationCenter.current().setBadgeCount(total)
+            unreadCountsByConversation = countsByConversation
+            unreadCount = countsByConversation.values.reduce(0, +)
+            try? await UNUserNotificationCenter.current().setBadgeCount(unreadCount)
         } catch {
             // Transient failure — badges just stay at their last known value.
         }

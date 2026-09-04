@@ -6,6 +6,7 @@ struct ProbenfahrtApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var adminPreview = AdminPreviewStore()
     @State private var devMode = DevModeStore()
+    @State private var surveyBadge = SurveySignupBadgeStore()
 
     var body: some Scene {
         WindowGroup {
@@ -14,6 +15,7 @@ struct ProbenfahrtApp: App {
                 .environment(appDelegate.unreadMessages)
                 .environment(adminPreview)
                 .environment(devMode)
+                .environment(surveyBadge)
         }
     }
 }
