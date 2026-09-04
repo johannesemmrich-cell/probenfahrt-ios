@@ -1,17 +1,23 @@
 import Foundation
 import SwiftData
 
-/// Populates a fresh, empty store with realistic demo data: one test group with
-/// a known join code, ~10 test users, several weeks of past survey sign-ins,
-/// group + DM chat messages, and a handful of sample locations.
+/// Populates a fresh, empty store with the group real users join against
+/// (known join codes, no members yet). In Debug builds only, it additionally
+/// fills that group with realistic demo data — ~10 test users, several weeks
+/// of past survey sign-ins, and group + DM chat messages — for local
+/// development and UI tests that rely on those fixtures existing.
+///
+/// Release builds (TestFlight/App Store) skip the demo fixtures entirely, so
+/// real testers join a clean group instead of a cast of fake colleagues.
 ///
 /// Only ever runs once (checks for an existing `TeamGroup` first) — the person
-/// who then runs onboarding becomes an additional, real `User` on top of this
-/// seed data, not one of these ten.
+/// who then runs onboarding becomes an additional, real `User` on top of any
+/// seed data, not one of the fixtures.
 enum MockDataSeeder {
     static let testGroupJoinCode = "LABOR2026"
     static let testGroupPharmacyJoinCode = "PROBEN2026"
 
+    #if DEBUG
     private struct SeedUser {
         let name: String
         let abbreviation: String
@@ -30,6 +36,7 @@ enum MockDataSeeder {
         SeedUser(name: "Paul Richter", abbreviation: "PR", role: .member),
         SeedUser(name: "Lea Zimmermann", abbreviation: "LZ", role: .member),
     ]
+    #endif
 
     static func seedIfNeeded(context: ModelContext) {
         let existingGroupCount = (try? context.fetchCount(FetchDescriptor<TeamGroup>())) ?? 0
@@ -38,6 +45,7 @@ enum MockDataSeeder {
         let group = TeamGroup(name: "Laborteam Nord", joinCode: testGroupJoinCode, pharmacyJoinCode: testGroupPharmacyJoinCode)
         context.insert(group)
 
+        #if DEBUG
         let users = seedUsers.map { seed in
             User(name: seed.name, abbreviation: seed.abbreviation, role: seed.role, groupID: group.id)
         }
@@ -45,10 +53,12 @@ enum MockDataSeeder {
 
         seedSurveyDays(groupID: group.id, users: users, context: context)
         seedChatMessages(groupID: group.id, users: users, context: context)
+        #endif
 
         try? context.save()
     }
 
+    #if DEBUG
     /// Seeds the past 3 full weeks plus the current week through today, Mon–Thu
     /// only, each with a deterministic 1–3 person rotation so the demo has
     /// realistic-looking variety without relying on true randomness.
@@ -120,4 +130,5 @@ enum MockDataSeeder {
             context.insert(ChatMessage(groupID: groupID, senderID: sender.id, recipientID: recipient.id, text: text, createdAt: at(hoursAgo: hoursAgo)))
         }
     }
+    #endif
 }
