@@ -13,25 +13,25 @@ struct SampleLocationRow: View {
                 Text(entry.location.address).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            if hasSamples {
-                VStack(alignment: .trailing, spacing: 3) {
-                    Text(entry.report.reportedAt.formatted(.dateTime.weekday(.wide).day().month().locale(.app)))
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(.primary)
+            VStack(alignment: .trailing, spacing: 3) {
+                Text(entry.report.reportedAt.formatted(.dateTime.weekday(.wide).day().month().locale(.app)))
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.primary)
+                if hasSamples {
                     Label(
                         entry.report.statusNote.isEmpty ? "Proben vorhanden" : entry.report.statusNote,
                         systemImage: "checkmark.circle.fill"
                     )
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.green)
+                } else {
+                    Text("Keine Proben")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(Color.secondary))
                 }
-            } else {
-                Text("Keine Proben")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Capsule().fill(Color.secondary))
             }
         }
         .padding(.vertical, 2)
