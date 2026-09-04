@@ -28,9 +28,10 @@ struct SamplesReportView: View {
                     Spacer()
                     Button { shiftMonth(by: 1) } label: { Image(systemName: "chevron.right") }
                 }
+                .buttonStyle(.plain)
             }
 
-            Section("Tage mit Proben pro Apotheke/Labor") {
+            Section("Tage mit Proben pro Apotheke/Briefkasten") {
                 if lines.isEmpty {
                     Text("Keine Proben-Meldungen in diesem Monat.").foregroundStyle(.secondary)
                 } else {

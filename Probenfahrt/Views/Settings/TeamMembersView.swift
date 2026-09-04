@@ -1,15 +1,13 @@
 import SwiftUI
-import SwiftData
 
 /// Admin-only roster of lab-team members (pharmacy accounts aren't listed
 /// here — they have no Kürzel/Fahrten to manage, see AccountKind).
 struct TeamMembersView: View {
     let currentUser: User
 
-    @Environment(\.modelContext) private var modelContext
     @State private var users: [User] = []
 
-    private var userRepository: UserRepository { SwiftDataUserRepository(context: modelContext) }
+    private var userRepository: UserRepository { CloudKitUserRepository() }
 
     var body: some View {
         List {

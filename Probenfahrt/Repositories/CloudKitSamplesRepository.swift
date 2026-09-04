@@ -185,38 +185,8 @@ final class CloudKitSamplesRepository: SamplesRepository {
         return Self.location(from: record)
     }
 
-    /// Pages through `CKQueryOperation.Cursor` until all matching records
-    /// are collected — CloudKit caps a single response's result count.
     private func allRecords(matching query: CKQuery) async throws -> [CKRecord] {
-        var records: [CKRecord] = []
-        var cursor: CKQueryOperation.Cursor?
-        repeat {
-            let result: (matchResults: [(CKRecord.ID, Result<CKRecord, Error>)], queryCursor: CKQueryOperation.Cursor?)
-            do {
-                if let cursor {
-                    result = try await database.records(continuingMatchFrom: cursor)
-                } else {
-                    result = try await database.records(matching: query)
-                }
-            } catch {
-                // A record type with no records saved yet doesn't exist in
-                // CloudKit's schema — querying it errors ("Did not find
-                // record type: ...") instead of just returning zero
-                // results. That's the normal state before the first
-                // SampleReport is ever saved, so treat it as "no data yet"
-                // rather than a real failure.
-                if Self.isUnknownRecordType(error) { return records }
-                throw error
-            }
-            records.append(contentsOf: result.matchResults.compactMap { try? $0.1.get() })
-            cursor = result.queryCursor
-        } while cursor != nil
-        return records
-    }
-
-    private static func isUnknownRecordType(_ error: Error) -> Bool {
-        if let ckError = error as? CKError, ckError.code == .unknownItem { return true }
-        return error.localizedDescription.contains("Did not find record type")
+        try await CloudKitQuerying.allRecords(matching: query, in: database)
     }
 
     // MARK: - Record IDs
@@ -229,14 +199,8 @@ final class CloudKitSamplesRepository: SamplesRepository {
         CKRecord.ID(recordName: "location-\(id.uuidString)")
     }
 
-    /// Builds the day suffix from local calendar components rather than
-    /// ISO8601DateFormatter (which defaults to UTC) — `day` is already a
-    /// Calendar.current.startOfDay(for:) instant, so formatting it in UTC
-    /// could shift it to the wrong calendar date depending on time of day.
     private static func reportRecordID(locationID: UUID, day: Date) -> CKRecord.ID {
-        let components = Calendar.current.dateComponents([.year, .month, .day], from: day)
-        let dayString = String(format: "%04d-%02d-%02d", components.year ?? 0, components.month ?? 0, components.day ?? 0)
-        return CKRecord.ID(recordName: "report-\(locationID.uuidString)-\(dayString)")
+        CKRecord.ID(recordName: "report-\(locationID.uuidString)-\(CloudKitQuerying.localDayString(for: day))")
     }
 
     // MARK: - CKRecord <-> model mapping

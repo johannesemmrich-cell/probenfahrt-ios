@@ -1,8 +1,6 @@
 import SwiftUI
-import SwiftData
 
 struct RootTabView: View {
-    @Environment(\.modelContext) private var modelContext
     @Environment(SessionStore.self) private var session
     @Environment(DevModeStore.self) private var devMode
 
@@ -75,9 +73,20 @@ struct RootTabView: View {
 
     private func loadCurrentUser() async {
         guard let id = session.currentUserID else { return }
-        let repository = SwiftDataUserRepository(context: modelContext)
-        currentUser = try? await repository.user(id: id)
-        if currentUser != nil, !featureOnboarding.hasSeenFeatureOnboarding {
+        let repository = CloudKitUserRepository()
+        let user = try? await repository.user(id: id)
+        guard let user else {
+            // The stored session points to a user CloudKit doesn't know
+            // about — e.g. a leftover local session from before the
+            // User/TeamGroup migration to CloudKit, or an account removed
+            // from the group by an admin on another device. Sign out so
+            // RootGateView falls back to onboarding instead of leaving this
+            // screen stuck on its loading spinner forever.
+            session.signOut()
+            return
+        }
+        currentUser = user
+        if !featureOnboarding.hasSeenFeatureOnboarding {
             isShowingFeatureOnboarding = true
         }
     }

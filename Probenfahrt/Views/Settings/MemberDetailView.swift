@@ -1,5 +1,4 @@
 import SwiftUI
-import SwiftData
 
 struct MemberDetailView: View {
     private enum StatPeriod: String, CaseIterable {
@@ -11,7 +10,6 @@ struct MemberDetailView: View {
     let currentUser: User
     let onRemoved: () -> Void
 
-    @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Environment(AdminPreviewStore.self) private var adminPreview
     @Environment(DevModeStore.self) private var devMode
@@ -23,8 +21,8 @@ struct MemberDetailView: View {
     @State private var referenceDate = Date.now
     @State private var isShowingRemoveConfirmation = false
 
-    private var userRepository: UserRepository { SwiftDataUserRepository(context: modelContext) }
-    private var surveyRepository: SurveyRepository { SwiftDataSurveyRepository(context: modelContext) }
+    private var userRepository: UserRepository { CloudKitUserRepository() }
+    private var surveyRepository: SurveyRepository { CloudKitSurveyRepository() }
 
     private var isFullAdmin: Bool { Probenfahrt.isFullAdmin(user: currentUser, adminPreview: adminPreview, devMode: devMode) }
     private var isDeveloperOverride: Bool { Probenfahrt.isDeveloperOverride(adminPreview: adminPreview, devMode: devMode) }

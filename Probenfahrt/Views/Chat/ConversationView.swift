@@ -1,5 +1,4 @@
 import SwiftUI
-import SwiftData
 
 struct ConversationView: View {
     enum Mode {
@@ -11,12 +10,11 @@ struct ConversationView: View {
     let mode: Mode
     let users: [User]
 
-    @Environment(\.modelContext) private var modelContext
     @State private var messages: [ChatMessage] = []
     @State private var draft = ""
     @State private var didInitialScroll = false
 
-    private var chatRepository: ChatRepository { SwiftDataChatRepository(context: modelContext) }
+    private var chatRepository: ChatRepository { CloudKitChatRepository() }
 
     private var title: String {
         switch mode {

@@ -1,18 +1,16 @@
 import SwiftUI
-import SwiftData
 
 struct SurveyDayDetailView: View {
     let row: SurveyDayRow
     let users: [User]
     let currentUser: User
 
-    @Environment(\.modelContext) private var modelContext
     @Environment(AdminPreviewStore.self) private var adminPreview
     @Environment(DevModeStore.self) private var devMode
 
     @State private var entries: [SurveyEntry]
 
-    private var surveyRepository: SurveyRepository { SwiftDataSurveyRepository(context: modelContext) }
+    private var surveyRepository: SurveyRepository { CloudKitSurveyRepository() }
 
     init(row: SurveyDayRow, users: [User], currentUser: User) {
         self.row = row

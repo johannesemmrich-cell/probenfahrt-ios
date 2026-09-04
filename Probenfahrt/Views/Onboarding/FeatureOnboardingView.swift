@@ -35,7 +35,7 @@ struct FeatureOnboardingView: View {
             title: "Proben",
             text: accountKind == .pharmacy
                 ? "Meldet hier täglich, ob ihr Proben für uns habt."
-                : "Hier seht ihr, welche Apotheken und Labore heute Proben für euch haben."
+                : "Hier seht ihr, welche Apotheken und Briefkästen heute Proben für euch haben."
         ))
         if accountKind == .labTeam {
             result.append(OnboardingPage(

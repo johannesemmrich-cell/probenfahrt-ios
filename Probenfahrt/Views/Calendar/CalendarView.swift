@@ -1,5 +1,4 @@
 import SwiftUI
-import SwiftData
 
 struct CalendarView: View {
     let currentUser: User
@@ -9,15 +8,14 @@ struct CalendarView: View {
         case week = "Woche"
     }
 
-    @Environment(\.modelContext) private var modelContext
     @Environment(DevModeStore.self) private var devMode
     @State private var referenceDate = Calendar.current.startOfDay(for: .now)
     @State private var viewMode: ViewMode = .month
     @State private var rows: [SurveyDayRow] = []
     @State private var users: [User] = []
 
-    private var surveyRepository: SurveyRepository { SwiftDataSurveyRepository(context: modelContext) }
-    private var userRepository: UserRepository { SwiftDataUserRepository(context: modelContext) }
+    private var surveyRepository: SurveyRepository { CloudKitSurveyRepository() }
+    private var userRepository: UserRepository { CloudKitUserRepository() }
 
     var body: some View {
         NavigationStack {

@@ -38,8 +38,6 @@ enum PersistenceController {
         // CloudKit, and does so via its own CKContainer-based repository,
         // not SwiftData's sync.
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: isUITesting, cloudKitDatabase: .none)
-        let container = try! ModelContainer(for: schema, configurations: [configuration])
-        MockDataSeeder.seedIfNeeded(context: container.mainContext)
-        return container
+        return try! ModelContainer(for: schema, configurations: [configuration])
     }
 }

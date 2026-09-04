@@ -1,10 +1,8 @@
 import SwiftUI
-import SwiftData
 
 struct SurveysView: View {
     let currentUser: User
 
-    @Environment(\.modelContext) private var modelContext
     @Environment(DevModeStore.self) private var devMode
 
     @State private var blocks: [SurveyWeekWindow.WeekBlock] = []
@@ -12,8 +10,8 @@ struct SurveysView: View {
     @State private var users: [User] = []
     @State private var hasLoadedOnce = false
 
-    private var surveyRepository: SurveyRepository { SwiftDataSurveyRepository(context: modelContext) }
-    private var userRepository: UserRepository { SwiftDataUserRepository(context: modelContext) }
+    private var surveyRepository: SurveyRepository { CloudKitSurveyRepository() }
+    private var userRepository: UserRepository { CloudKitUserRepository() }
 
     var body: some View {
         NavigationStack {

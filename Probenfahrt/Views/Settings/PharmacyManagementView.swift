@@ -148,7 +148,7 @@ private struct AddPharmacySheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                TextField("Name der Apotheke/des Labors", text: $name)
+                TextField("Name der Apotheke/des Briefkastens", text: $name)
                 TextField("Adresse (optional)", text: $address)
 
                 Section {

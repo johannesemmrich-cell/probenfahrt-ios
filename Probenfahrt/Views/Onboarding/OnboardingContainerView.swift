@@ -1,5 +1,4 @@
 import SwiftUI
-import SwiftData
 
 struct OnboardingContainerView: View {
     private enum Step {
@@ -8,7 +7,6 @@ struct OnboardingContainerView: View {
         case pharmacyIdentity
     }
 
-    @Environment(\.modelContext) private var modelContext
     @Environment(SessionStore.self) private var session
     @Environment(DevModeStore.self) private var devMode
 
@@ -21,7 +19,7 @@ struct OnboardingContainerView: View {
     @State private var errorMessage: String?
     @State private var isSubmitting = false
 
-    private var userRepository: UserRepository { SwiftDataUserRepository(context: modelContext) }
+    private var userRepository: UserRepository { CloudKitUserRepository() }
     private var samplesRepository: SamplesRepository { CloudKitSamplesRepository() }
 
     var body: some View {

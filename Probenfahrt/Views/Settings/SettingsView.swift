@@ -1,11 +1,9 @@
 import SwiftUI
-import SwiftData
 
 struct SettingsView: View {
     let currentUser: User
     let onCurrentUserUpdated: (User) -> Void
 
-    @Environment(\.modelContext) private var modelContext
     @Environment(SessionStore.self) private var session
     @Environment(AdminPreviewStore.self) private var adminPreview
     @Environment(DevModeStore.self) private var devMode
@@ -23,7 +21,7 @@ struct SettingsView: View {
     private let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
     private let buildNumber = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
 
-    private var userRepository: UserRepository { SwiftDataUserRepository(context: modelContext) }
+    private var userRepository: UserRepository { CloudKitUserRepository() }
     private var samplesRepository: SamplesRepository { CloudKitSamplesRepository() }
 
     private var isAdmin: Bool { isEffectiveAdmin(user: currentUser, adminPreview: adminPreview, devMode: devMode) }

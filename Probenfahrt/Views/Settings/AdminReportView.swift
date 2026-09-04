@@ -1,5 +1,4 @@
 import SwiftUI
-import SwiftData
 
 /// Admin-only monthly trip report as a shareable PDF, e.g. "Johannes: 7 Fahrten".
 /// TODO(Backlog #2): not technically access-controlled yet — reachable via the
@@ -7,13 +6,12 @@ import SwiftData
 struct AdminReportView: View {
     let currentUser: User
 
-    @Environment(\.modelContext) private var modelContext
     @State private var referenceMonth = Calendar.current.startOfDay(for: .now)
     @State private var lines: [MonthlyReportGenerator.ReportLine] = []
     @State private var pdfURL: URL?
 
-    private var surveyRepository: SurveyRepository { SwiftDataSurveyRepository(context: modelContext) }
-    private var userRepository: UserRepository { SwiftDataUserRepository(context: modelContext) }
+    private var surveyRepository: SurveyRepository { CloudKitSurveyRepository() }
+    private var userRepository: UserRepository { CloudKitUserRepository() }
 
     private var monthTitle: String {
         referenceMonth.formatted(.dateTime.month(.wide).year().locale(.app))
@@ -29,6 +27,7 @@ struct AdminReportView: View {
                     Spacer()
                     Button { shiftMonth(by: 1) } label: { Image(systemName: "chevron.right") }
                 }
+                .buttonStyle(.plain)
             }
 
             Section("Fahrten pro Person") {

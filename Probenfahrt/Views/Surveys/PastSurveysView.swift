@@ -1,5 +1,4 @@
 import SwiftUI
-import SwiftData
 
 /// Weeks that have fully rolled out of the 2 "aktuell" blocks in SurveysView,
 /// grouped into the same "Fahrplan vom...bis..." week blocks — just further
@@ -9,14 +8,13 @@ import SwiftData
 struct PastSurveysView: View {
     let currentUser: User
 
-    @Environment(\.modelContext) private var modelContext
     @State private var blocks: [SurveyWeekWindow.WeekBlock] = []
     @State private var rowsByBlock: [Date: [SurveyDayRow]] = [:]
     @State private var users: [User] = []
     @State private var hasLoadedOnce = false
 
-    private var surveyRepository: SurveyRepository { SwiftDataSurveyRepository(context: modelContext) }
-    private var userRepository: UserRepository { SwiftDataUserRepository(context: modelContext) }
+    private var surveyRepository: SurveyRepository { CloudKitSurveyRepository() }
+    private var userRepository: UserRepository { CloudKitUserRepository() }
 
     private var nonEmptyBlocks: [SurveyWeekWindow.WeekBlock] {
         blocks.filter { !(rowsByBlock[$0.weekStart] ?? []).isEmpty }

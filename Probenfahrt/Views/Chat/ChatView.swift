@@ -1,14 +1,12 @@
 import SwiftUI
-import SwiftData
 
 struct ChatView: View {
     let currentUser: User
 
-    @Environment(\.modelContext) private var modelContext
     @Environment(DevModeStore.self) private var devMode
     @State private var users: [User] = []
 
-    private var userRepository: UserRepository { SwiftDataUserRepository(context: modelContext) }
+    private var userRepository: UserRepository { CloudKitUserRepository() }
 
     private var otherUsers: [User] {
         users.filter { $0.id != currentUser.id }.sorted { $0.name < $1.name }

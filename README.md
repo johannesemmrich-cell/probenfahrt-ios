@@ -4,18 +4,21 @@ Native iOS-App (SwiftUI) für ein Labor-Team: Wer fährt an welchem Tag Proben
 zum Labor bzw. holt sie ab. Umfragen, automatisch generierter Kalender,
 Proben-Status, Team-Chat und Einstellungen.
 
-Aktueller Stand: Umfragen/Kalender/Chat/Mitglieder laufen weiterhin auf
-**lokalen SwiftData-Mock-Daten**. Der **Proben-Bereich hat seit
-2026-09-03 ein echtes Backend** (CloudKit, öffentliche Datenbank) inkl.
-QR-Code-Web-Check-in für Apotheken ohne App-Installation (siehe Abschnitt
-"CloudKit-Setup" unten und [BACKLOG.md](./BACKLOG.md)).
+Aktueller Stand: Die **komplette App hat seit 2026-09-04 ein echtes Backend**
+(CloudKit, öffentliche Datenbank) — Umfragen/Kalender/Mitglieder/Chat kamen
+dazu, der Proben-Bereich (inkl. QR-Code-Web-Check-in für Apotheken ohne
+App-Installation) läuft schon seit 2026-09-03 darüber (siehe Abschnitt
+"CloudKit-Setup" unten und [BACKLOG.md](./BACKLOG.md)). Nur noch
+Feedback/Entwicklermodus-To-Dos bleiben lokal (SwiftData).
 
 ## Tech-Stack
 
 - SwiftUI, Swift 6, iOS 26+ (nur iPhone, Portrait)
-- SwiftData für lokale Persistenz (Umfragen/Kalender/Chat/Mitglieder).
-  Proben-Bereich (`SampleLocation`/`SampleReport`) läuft stattdessen über
-  CloudKit (öffentliche Datenbank) — siehe "CloudKit-Setup" unten.
+- CloudKit (öffentliche Datenbank) für alle geteilten Team-Daten
+  (`TeamGroup`/`User`/`SurveyDay`/`SurveyEntry`/`ChatMessage`/
+  `SampleLocation`/`SampleReport`) — siehe "CloudKit-Setup" unten. SwiftData
+  bleibt nur noch für rein lokale, nicht geteilte Daten (`FeedbackEntry`,
+  `DevTodoItem`).
 - Architektur: MVVM (`Models` / `Repositories` / `ViewModels` / `Views`)
 - Repository-Pattern: Views/ViewModels sprechen nur mit Repository-
   Protokollen, nie direkt mit SwiftData — später kann eine echte Backend-
@@ -58,14 +61,13 @@ iOS-Runtime-Version wechseln (Window → Devices and Simulators zeigt
 installierte Runtimes). Kein Debugging-/Entwicklerkonto-Problem — separat
 geprüft (auch mit deaktiviertem "Debug executable" trat es weiter auf).
 
-## CloudKit-Setup (für den Proben-/Apotheken-Bereich)
+## CloudKit-Setup
 
-Der Proben-Bereich (`CloudKitSamplesRepository`) läuft gegen die
-**öffentliche** CloudKit-Datenbank des Containers
-`iCloud.com.johannesemmrich.probenfahrt` — nicht gegen SwiftData+CloudKit's
-automatischen Sync, der nur die *private* Datenbank eines einzelnen
-iCloud-Accounts spiegelt und damit weder das ganze Laborteam noch eine
-anonyme Web-Seite erreichen könnte.
+Alle geteilten Team-Daten laufen gegen die **öffentliche** CloudKit-
+Datenbank des Containers `iCloud.com.johannesemmrich.probenfahrt` — nicht
+gegen SwiftData+CloudKit's automatischen Sync, der nur die *private*
+Datenbank eines einzelnen iCloud-Accounts spiegelt und damit weder das ganze
+Laborteam noch eine anonyme Web-Seite erreichen könnte.
 
 Folgende Schritte sind **einmalig, manuell im CloudKit Dashboard**
 (icloud.developer.apple.com) nötig — das kann ich nicht per Kommandozeile
@@ -77,11 +79,18 @@ für dich erledigen, dafür gibt es keine API:
    den iCloud-Container `iCloud.com.johannesemmrich.probenfahrt` dabei
    automatisch bei deinem Account, falls er noch nicht existiert.
 2. **Schema entsteht automatisch beim ersten Speichern.** Sobald die App
-   einmal läuft (echtes Gerät oder Simulator mit iCloud-Account) und z. B.
-   über "Apotheken verwalten" eine Apotheke anlegt, erzeugt CloudKit die
-   Record-Typen `SampleLocation`/`SampleReport` in der
+   einmal im Debug-Build läuft (echtes Gerät oder Simulator mit
+   iCloud-Account), legt `MockDataSeeder.ensureCloudTestDataIfNeeded()` beim
+   Start automatisch die Test-Gruppe an und erzeugt damit alle sieben
+   Record-Typen (`TeamGroup`, `User`, `SurveyDay`, `SurveyEntry`,
+   `ChatMessage`, `SampleLocation`, `SampleReport`) in der
    **Development**-Umgebung automatisch mit den passenden Feldern.
 3. **Felder als "Queryable" markieren.** Im Dashboard unter Schema:
+   - `TeamGroup`: `joinCode`, `pharmacyJoinCode`
+   - `User`: `groupID`
+   - `SurveyDay`: `groupID`, `date`, `dayID`
+   - `SurveyEntry`: `surveyDayID`, `groupID`
+   - `ChatMessage`: `groupID`, `senderID`, `recipientID`
    - `SampleLocation`: `groupID`, `locationID`, `token`
    - `SampleReport`: `groupID`, `locationID`, `day`
    Ohne das schlagen Abfragen mit einer klaren Fehlermeldung fehl ("field
@@ -112,12 +121,14 @@ für dich erledigen, dafür gibt es keine API:
    `web/server_config.py` `ENVIRONMENT` auf `"production"` umstellen und im
    Dashboard einen zweiten, production-spezifischen Server-to-Server-Key
    erzeugen (Keys sind pro Umgebung getrennt).
-6. **`_icloud`-Rolle: Write ergänzen.** Beim Einrichten ist aufgefallen,
-   dass `_icloud` (die App mit echtem iCloud-Account) nur **Create**
-   hatte, nicht **Write** — reicht fürs erste Anlegen, aber nicht fürs
-   Ändern eines schon bestehenden Reports (z. B. erst "Ja", später am
-   selben Tag "Nein" antippen). Security Roles → `_icloud` →
-   `SampleLocation` + `SampleReport` → zusätzlich **Write** anhaken.
+6. **`_icloud`-Rolle: Create + Write auf allen sieben Record-Typen.** Beim
+   Einrichten des Proben-Bereichs ist aufgefallen, dass `_icloud` (die App
+   mit echtem iCloud-Account) nur **Create** hatte, nicht **Write** — reicht
+   fürs erste Anlegen, aber nicht fürs Ändern eines schon bestehenden
+   Records (z. B. Umfrage-Tag sperren, eigenen Namen/Kürzel ändern, Proben-
+   Status von "Ja" auf "Nein" korrigieren). Security Roles → `_icloud` →
+   `TeamGroup`, `User`, `SurveyDay`, `SurveyEntry`, `ChatMessage`,
+   `SampleLocation`, `SampleReport` → jeweils **Create + Write** anhaken.
 
 Ich konnte diese Schritte nicht selbst ausführen oder live gegen echte
 Apple-Server testen (kein Zugriff auf Xcode-GUI oder das CloudKit
@@ -146,10 +157,21 @@ Handy im selben WLAN durch die LAN-IP ersetzen, siehe Hinweistext dort).
 ## Test-Zugänge (Mock-Daten)
 
 Im Onboarding wird zuerst der Code abgefragt — er entscheidet, welchen
-Account man bekommt:
+Account man bekommt. Beide Codes lösen zur selben, von
+`MockDataSeeder.ensureCloudTestDataIfNeeded()` bei jedem App-Start
+idempotent sichergestellten `TeamGroup` auf.
+
+**Debug-Builds** (lokaler Simulator/Gerät-Run, UI-Tests) seeden zusätzlich
+~10 fiktive Testnutzer, Umfrage-Historie und Chat-Nachrichten in diese
+Gruppe (nur beim allerersten Mal, danach ist die Gruppe nicht mehr leer und
+nichts wird erneut angelegt). **Release-/TestFlight-Builds seeden diese
+Fixtures bewusst nicht** (`#if DEBUG`-gated) — echte Tester joinen einer
+leeren Gruppe, nicht einer Belegschaft aus Fake-Kollegen. Debug spricht
+CloudKits **Development**-Umgebung an, Release/TestFlight **Production** —
+beide Umgebungen sind komplett getrennt, es gibt also keine Überschneidung.
 
 - **`LABOR2026`** → normaler Laborteam-Account (Name + Kürzel, alle 5 Tabs).
-  Seed-Daten: "Laborteam Nord", ~10 simulierte Testnutzer, u. a.
+  Debug-Seed-Daten: "Laborteam Nord", ~10 simulierte Testnutzer, u. a.
   "Johannes Emmrich" als Admin.
 - **`PROBEN2026`** → Apotheken-/Zulieferer-Account: Statt Name/Kürzel wird
   nur ein Apotheken-/Firmenname abgefragt. Dieser Account bekommt nur 2 Tabs
@@ -224,14 +246,59 @@ einer sinnvollen Annahme beantwortet werden.
 - **Bundle-ID / Konventionen**: an Sunwake/GymTrack angelehnt
   (`com.johannesemmrich.probenfahrt`, XcodeGen, iOS 26 Deployment-Target,
   Swift 6, nur iPhone/Portrait, `.xcodeproj` nicht eingecheckt).
-- **CloudKit nur für den Proben-Bereich, nicht für die ganze App**
+- **CloudKit zunächst nur für den Proben-Bereich, nicht für die ganze App**
   (Stand 2026-09-03): Backlog #1 verlangt echte Backend-Anbindung
-  allgemein, aber der konkrete Auslöser heute Abend war ausschließlich der
+  allgemein, aber der konkrete Auslöser an jenem Abend war ausschließlich der
   QR-Code-Web-Check-in für Apotheken (Backlog #3), der ohne geteilten
-  Backend-Zugriff nicht geht. Umfragen/Kalender/Chat/Mitglieder bleiben
-  bewusst auf lokalem SwiftData, um den Umbau nicht in einer Nacht auf die
-  ganze App auszuweiten — Migration der übrigen Bereiche ist ein separater
-  Schritt, wenn explizit gewünscht.
+  Backend-Zugriff nicht geht. Umfragen/Kalender/Chat/Mitglieder blieben
+  zunächst bewusst auf lokalem SwiftData, um den Umbau nicht in einer Nacht
+  auf die ganze App auszuweiten — die Migration der übrigen Bereiche folgte
+  einen Tag später, siehe nächster Punkt.
+- **CloudKit auf den Rest der App ausgeweitet** (Stand 2026-09-04): Auslöser
+  war der erste echte Test zu viert über TestFlight — dafür mussten sich die
+  Tester gegenseitig sehen können (wer trägt sich in eine Umfrage ein, Chat,
+  Mitgliederliste), was mit rein lokalem SwiftData pro Gerät nicht ging.
+  `CloudKitUserRepository` (User + TeamGroup), `CloudKitSurveyRepository`
+  (SurveyDay + SurveyEntry) und `CloudKitChatRepository` (ChatMessage) kamen
+  dazu, nach demselben Muster wie `CloudKitSamplesRepository` (öffentliche
+  Datenbank, deterministische Record-IDs wo Idempotenz nötig ist, sonst
+  zufällige). Paging/"Record-Typ existiert noch nicht"-Handling wurde dabei
+  in einen gemeinsamen `CloudKitQuerying`-Helper gezogen (auch von
+  `CloudKitSamplesRepository` genutzt, kleiner Begleit-Refactor). Neu:
+  `SurveyEntry.groupID` (denormalisiert, analog `SampleReport.groupID`,
+  damit Einträge gruppen-scoped statt unbegrenzt abgefragt werden) und
+  `ChatMessage.recipientID` wird für Gruppennachrichten als String-Sentinel
+  `"group"` statt `nil` gespeichert (vermeidet jede Abhängigkeit von
+  CloudKits Nil-/Ungleich-Query-Unterstützung; DM-Abfragen laufen als zwei
+  einfache Gleichheits-Queries statt einem OR-Prädikat). `MockDataSeeder`
+  seedet jetzt idempotent gegen CloudKit statt einmalig gegen den lokalen
+  Store (siehe "Test-Zugänge" oben). Bewusst nicht mit angefasst: neue
+  Lade-/Fehler-UI für die jetzt vernetzten Screens (gleiche bekannte Kante
+  wie schon bei Backlog #4 für den Proben-Bereich dokumentiert) und robuste
+  Konfliktbehandlung beim gleichzeitigen Anlegen desselben Umfrage-Tages
+  durch zwei Geräte (best-effort, analog zur bereits bekannten
+  SampleReport-Race).
+- **Fünf weitere UI-Tests wegen derselben CloudKit-Umstellung übersprungen**
+  (Stand 2026-09-04, zusätzlich zu den drei bereits für den Proben-Bereich
+  übersprungenen): `AdminRolesUITests.testAdminCodeUnlocksHauptAdminAndPromotesViceAdmin`,
+  `AdminRolesUITests.testDevModeAdminPreviewCanRemoveLastHauptAdmin`,
+  `BrandingUITests.testBrandingShowsUpAcrossScreens`,
+  `OnboardingAndTabsUITests.testOnboardingThenAllTabsReachable`,
+  `PharmacyOnboardingUITests.testDevPasswordInCodeFieldBypassesStraightIntoStandardApp`
+  — alle 6 UI-Test-Dateien starten mit dem Beitrittscode-Schritt (inkl.
+  Dev-Bypass), der jetzt `CloudKitUserRepository.resolveJoinCode` statt einer
+  lokalen Lookup braucht. Erst versucht: die betroffenen
+  `waitForExistence`-Timeouts von 5s auf 20s angehoben, in der Annahme, dass
+  es nur ein Latenz-, kein Determinismus-Problem ist (anders als beim
+  Proben-Bereich, wo tatsächlich unbekannter *Inhalt* das Problem war, nicht
+  nur Timing) — brachte nichts, die App kam ohne signiertes iCloud-Testkonto
+  im UI-Test-Simulator über den Code-Schritt gar nicht erst hinaus (volle 20s
+  ausgeschöpft, kein Erfolg), also wieder auf 5s zurückgesetzt und stattdessen
+  wie die drei bestehenden Fälle mit `XCTSkip` übersprungen. Einzig
+  `ColdLaunchUITests` (misst nur die Kaltstart-Zeit, kein Onboarding) und die
+  bereits vorher übersprungenen 3 blieben unverändert. Volle Suite jetzt
+  wieder grün: 8 Tests, 1 läuft echt (ColdLaunchUITests), 7 übersprungen, 0
+  Fehlschläge.
 - **CloudKit statt Supabase/Firebase gewählt**: kein neuer Account nötig
   (läuft über das ohnehin für TestFlight nötige Apple-Entwicklerkonto),
   dafür ist CloudKits Public-Database-Sicherheitsmodell pro Record-Typ statt

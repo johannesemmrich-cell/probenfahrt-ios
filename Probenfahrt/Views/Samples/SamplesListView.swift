@@ -42,7 +42,7 @@ struct SamplesListView: View {
                 }
 
                 if locations.isEmpty {
-                    ContentUnavailableView("Keine Apotheken/Labore", systemImage: "cross.vial")
+                    ContentUnavailableView("Keine Apotheken/Briefkästen", systemImage: "cross.vial")
                 } else if withSamples.isEmpty && withoutSamples.isEmpty {
                     ContentUnavailableView("Heute noch keine Meldungen", systemImage: "cross.vial")
                 }

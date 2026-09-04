@@ -1,21 +1,48 @@
 import Foundation
-import SwiftData
 
-/// Populates a fresh, empty store with the group real users join against
-/// (known join codes, no members yet). In Debug builds only, it additionally
-/// fills that group with realistic demo data — ~10 test users, several weeks
-/// of past survey sign-ins, and group + DM chat messages — for local
-/// development and UI tests that rely on those fixtures existing.
+/// Ensures the CloudKit-backed group real users join against exists (known
+/// join codes, no members yet) — idempotent, safe to call on every launch,
+/// since `CloudKitUserRepository.ensureGroupExists` finds-or-creates by a
+/// deterministic record ID rather than always inserting a new one.
 ///
-/// Release builds (TestFlight/App Store) skip the demo fixtures entirely, so
-/// real testers join a clean group instead of a cast of fake colleagues.
+/// In Debug builds only, additionally fills that group with realistic demo
+/// data — ~10 test users, several weeks of past survey sign-ins, and group +
+/// DM chat messages — for local development and UI tests that rely on those
+/// fixtures existing. The fixtures themselves only get created once (checked
+/// via the group having no members yet).
 ///
-/// Only ever runs once (checks for an existing `TeamGroup` first) — the person
-/// who then runs onboarding becomes an additional, real `User` on top of any
-/// seed data, not one of the fixtures.
+/// Release builds (TestFlight/App Store) skip the demo fixtures entirely —
+/// Debug talks to CloudKit's separate Development environment, Release to
+/// Production (see CloudKitConfig/README "CloudKit-Setup"), so this can
+/// never leak fake colleagues into what real testers see.
+@MainActor
 enum MockDataSeeder {
     static let testGroupJoinCode = "LABOR2026"
     static let testGroupPharmacyJoinCode = "PROBEN2026"
+
+    static func ensureCloudTestDataIfNeeded() async {
+        let userRepository = CloudKitUserRepository()
+        guard let group = try? await userRepository.ensureGroupExists(
+            name: "Laborteam Nord",
+            joinCode: testGroupJoinCode,
+            pharmacyJoinCode: testGroupPharmacyJoinCode
+        ) else { return }
+
+        #if DEBUG
+        guard let existingUsers = try? await userRepository.allUsers(inGroup: group.id), existingUsers.isEmpty else { return }
+
+        var users: [User] = []
+        for seed in seedUsers {
+            guard let user = try? await userRepository.createSeedUser(
+                name: seed.name, abbreviation: seed.abbreviation, role: seed.role, groupID: group.id
+            ) else { return }
+            users.append(user)
+        }
+
+        await seedSurveyDays(groupID: group.id, users: users)
+        await seedChatMessages(groupID: group.id, users: users)
+        #endif
+    }
 
     #if DEBUG
     private struct SeedUser {
@@ -36,52 +63,26 @@ enum MockDataSeeder {
         SeedUser(name: "Paul Richter", abbreviation: "PR", role: .member),
         SeedUser(name: "Lea Zimmermann", abbreviation: "LZ", role: .member),
     ]
-    #endif
 
-    static func seedIfNeeded(context: ModelContext) {
-        let existingGroupCount = (try? context.fetchCount(FetchDescriptor<TeamGroup>())) ?? 0
-        guard existingGroupCount == 0 else { return }
-
-        let group = TeamGroup(name: "Laborteam Nord", joinCode: testGroupJoinCode, pharmacyJoinCode: testGroupPharmacyJoinCode)
-        context.insert(group)
-
-        #if DEBUG
-        let users = seedUsers.map { seed in
-            User(name: seed.name, abbreviation: seed.abbreviation, role: seed.role, groupID: group.id)
-        }
-        users.forEach { context.insert($0) }
-
-        seedSurveyDays(groupID: group.id, users: users, context: context)
-        seedChatMessages(groupID: group.id, users: users, context: context)
-        #endif
-
-        try? context.save()
-    }
-
-    #if DEBUG
     /// Seeds the past 3 full weeks plus the current week through today, Mon–Thu
     /// only, each with a deterministic 1–3 person rotation so the demo has
-    /// realistic-looking variety without relying on true randomness.
-    private static func seedSurveyDays(groupID: UUID, users: [User], context: ModelContext) {
+    /// realistic-looking variety without relying on true randomness. Reuses
+    /// `surveyDays(from:to:groupID:)`'s lazy-create + `signIn` instead of
+    /// building CKRecords by hand, so the fixtures go through the exact same
+    /// path a real sign-up would.
+    private static func seedSurveyDays(groupID: UUID, users: [User]) async {
+        let surveyRepository = CloudKitSurveyRepository()
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: .now)
         guard let rangeStart = calendar.date(byAdding: .day, value: -21, to: today) else { return }
+        // Returned days are Mon–Thu only, sorted ascending — so their index
+        // already lines up with attendeeIndices' dayOffset semantics.
+        guard let days = try? await surveyRepository.surveyDays(from: rangeStart, to: today, groupID: groupID) else { return }
 
-        var dayOffset = 0
-        var cursor = rangeStart
-        while cursor <= today {
-            let weekday = calendar.component(.weekday, from: cursor) // 2...5 = Mon...Thu
-            if (2...5).contains(weekday) {
-                let day = SurveyDay(date: cursor, groupID: groupID)
-                context.insert(day)
-
-                for index in attendeeIndices(for: dayOffset) {
-                    let entry = SurveyEntry(surveyDayID: day.id, userID: users[index].id, createdAt: cursor)
-                    context.insert(entry)
-                }
-                dayOffset += 1
+        for (dayOffset, day) in days.enumerated() {
+            for index in attendeeIndices(for: dayOffset) {
+                try? await surveyRepository.signIn(userID: users[index].id, dayID: day.id)
             }
-            cursor = calendar.date(byAdding: .day, value: 1, to: cursor) ?? today.addingTimeInterval(86400 * 999)
         }
     }
 
@@ -96,7 +97,8 @@ enum MockDataSeeder {
         }
     }
 
-    private static func seedChatMessages(groupID: UUID, users: [User], context: ModelContext) {
+    private static func seedChatMessages(groupID: UUID, users: [User]) async {
+        let chatRepository = CloudKitChatRepository()
         let now = Date.now
         func at(hoursAgo: Double) -> Date { now.addingTimeInterval(-hoursAgo * 3600) }
 
@@ -117,7 +119,7 @@ enum MockDataSeeder {
             (anna, "Alles klar, hab mich schon für nächste Woche eingetragen.", 5),
         ]
         for (user, text, hoursAgo) in groupMessages {
-            context.insert(ChatMessage(groupID: groupID, senderID: user.id, text: text, createdAt: at(hoursAgo: hoursAgo)))
+            try? await chatRepository.seedMessage(groupID: groupID, senderID: user.id, recipientID: nil, text: text, createdAt: at(hoursAgo: hoursAgo))
         }
 
         let dmMessages: [(User, User, String, Double)] = [
@@ -127,7 +129,7 @@ enum MockDataSeeder {
             (markus, anna, "Passt schon, mach ich gern.", 28),
         ]
         for (sender, recipient, text, hoursAgo) in dmMessages {
-            context.insert(ChatMessage(groupID: groupID, senderID: sender.id, recipientID: recipient.id, text: text, createdAt: at(hoursAgo: hoursAgo)))
+            try? await chatRepository.seedMessage(groupID: groupID, senderID: sender.id, recipientID: recipient.id, text: text, createdAt: at(hoursAgo: hoursAgo))
         }
     }
     #endif
