@@ -78,14 +78,26 @@ für dich erledigen, dafür gibt es keine API:
    auswählen (Automatic Signing ist schon konfiguriert). Xcode registriert
    den iCloud-Container `iCloud.com.johannesemmrich.probenfahrt` dabei
    automatisch bei deinem Account, falls er noch nicht existiert.
-2. **Schema entsteht automatisch beim ersten Speichern.** Sobald die App
+2. **Push-Notifications-Capability aktiv haben.** `Probenfahrt.entitlements`
+   enthält bereits `aps-environment: development` und `project.yml` setzt
+   `UIBackgroundModes: remote-notification` — mit Automatic Signing sollte
+   Xcode das beim ersten Build mit ausgewähltem Team automatisch fürs App-ID
+   mit provisionieren, genau wie den iCloud-Container in Schritt 1. Falls
+   Push trotzdem nicht ankommt: im Apple Developer Portal unter
+   Certificates, Identifiers & Profiles → Identifiers →
+   `com.johannesemmrich.probenfahrt` prüfen, ob "Push Notifications" als
+   Capability gelistet ist. **Testen geht nur auf zwei echten Geräten mit
+   zwei unterschiedlichen iCloud-Accounts** — Simulator-Push für CloudKit-
+   Subscriptions ist unzuverlässig, und mit nur einem Gerät kann man nicht
+   beobachten, ob eine fremde Nachricht ankommt.
+3. **Schema entsteht automatisch beim ersten Speichern.** Sobald die App
    einmal im Debug-Build läuft (echtes Gerät oder Simulator mit
    iCloud-Account), legt `MockDataSeeder.ensureCloudTestDataIfNeeded()` beim
    Start automatisch die Test-Gruppe an und erzeugt damit alle sieben
    Record-Typen (`TeamGroup`, `User`, `SurveyDay`, `SurveyEntry`,
    `ChatMessage`, `SampleLocation`, `SampleReport`) in der
    **Development**-Umgebung automatisch mit den passenden Feldern.
-3. **Felder als "Queryable" markieren.** Im Dashboard unter Schema:
+4. **Felder als "Queryable" markieren.** Im Dashboard unter Schema:
    - `TeamGroup`: `joinCode`, `pharmacyJoinCode`
    - `User`: `groupID`
    - `SurveyDay`: `groupID`, `date`, `dayID`
@@ -95,7 +107,7 @@ für dich erledigen, dafür gibt es keine API:
    - `SampleReport`: `groupID`, `locationID`, `day`
    Ohne das schlagen Abfragen mit einer klaren Fehlermeldung fehl ("field
    ... is not marked queryable") — dann hier nachtragen.
-4. **Server-to-Server-Key statt "World"-Rolle.** Ursprünglich war geplant,
+5. **Server-to-Server-Key statt "World"-Rolle.** Ursprünglich war geplant,
    dass die Web-Seite direkt (anonym, per API-Token) über CloudKit JS
    schreibt — das geht aber nicht: die `_world`-Sicherheitsrolle lässt sich
    im Dashboard nur auf **Read** setzen, Create/Write sind für anonyme
@@ -114,14 +126,14 @@ für dich erledigen, dafür gibt es keine API:
    - Die `_world`-Rolle selbst braucht nichts weiter — der Proxy umgeht sie
      komplett, Lesen *und* Schreiben laufen beide über den privilegierten
      Server-to-Server-Key.
-5. **Vor dem echten TestFlight-Rollout: Schema nach Production deployen.**
+6. **Vor dem echten TestFlight-Rollout: Schema nach Production deployen.**
    Ein Release-Build (= was TestFlight bekommt) spricht automatisch die
    **Production**-Umgebung an, nicht Development. Im Dashboard: "Deploy
    Schema Changes" von Development nach Production ausführen. In
    `web/server_config.py` `ENVIRONMENT` auf `"production"` umstellen und im
    Dashboard einen zweiten, production-spezifischen Server-to-Server-Key
    erzeugen (Keys sind pro Umgebung getrennt).
-6. **`_icloud`-Rolle: Create + Write auf allen sieben Record-Typen.** Beim
+7. **`_icloud`-Rolle: Create + Write auf allen sieben Record-Typen.** Beim
    Einrichten des Proben-Bereichs ist aufgefallen, dass `_icloud` (die App
    mit echtem iCloud-Account) nur **Create** hatte, nicht **Write** — reicht
    fürs erste Anlegen, aber nicht fürs Ändern eines schon bestehenden

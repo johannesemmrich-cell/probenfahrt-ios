@@ -15,6 +15,10 @@ protocol SurveyRepository {
     /// screens (Kalender, vergangene Umfragen) that must not have side effects.
     func existingSurveyDays(from startDate: Date, to endDate: Date, groupID: UUID) async throws -> [SurveyDay]
     func entries(forDayID dayID: UUID) async throws -> [SurveyEntry]
+    /// Same as calling `entries(forDayID:)` once per id, but in a single
+    /// round trip — views that render a whole week block use this instead of
+    /// looping, so opening/refreshing Umfragen isn't one network call per day.
+    func entries(forDayIDs dayIDs: [UUID]) async throws -> [SurveyEntry]
     func signIn(userID: UUID, dayID: UUID) async throws
     func signOut(userID: UUID, dayID: UUID) async throws
     func setLocked(_ locked: Bool, reason: String?, dayID: UUID) async throws

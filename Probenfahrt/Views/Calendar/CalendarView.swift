@@ -83,12 +83,11 @@ struct CalendarView: View {
             }
             guard let interval else { return }
             let days = try await surveyRepository.existingSurveyDays(from: interval.start, to: interval.end, groupID: groupID)
-            var newRows: [SurveyDayRow] = []
-            for day in days {
-                let entries = try await surveyRepository.entries(forDayID: day.id)
-                newRows.append(SurveyDayRow(day: day, entries: entries))
-            }
-            rows = newRows
+            let entriesByDayID = Dictionary(
+                grouping: try await surveyRepository.entries(forDayIDs: days.map(\.id)),
+                by: \.surveyDayID
+            )
+            rows = days.map { day in SurveyDayRow(day: day, entries: entriesByDayID[day.id] ?? []) }
         } catch {
             rows = []
         }

@@ -10,6 +10,8 @@ struct ConversationView: View {
     let mode: Mode
     let users: [User]
 
+    @Environment(UnreadMessagesStore.self) private var unreadMessages
+
     @State private var messages: [ChatMessage] = []
     @State private var draft = ""
     @State private var didInitialScroll = false
@@ -20,6 +22,13 @@ struct ConversationView: View {
         switch mode {
         case .group: return "Gruppen-Chat"
         case .direct(let partner): return partner.name
+        }
+    }
+
+    private var conversationKey: String {
+        switch mode {
+        case .group: return UnreadMessagesStore.groupConversationKey
+        case .direct(let partner): return partner.id.uuidString
         }
     }
 
@@ -97,18 +106,27 @@ struct ConversationView: View {
         case .direct(let partner):
             messages = (try? await chatRepository.directMessages(groupID: groupID, between: currentUser.id, and: partner.id)) ?? []
         }
+        unreadMessages.markRead(conversationKey: conversationKey)
+        await unreadMessages.refresh(currentUser: currentUser)
     }
 
     private func send() async {
         guard let groupID = currentUser.groupID else { return }
-        let text = draft
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
         draft = ""
+
+        // Append locally right away instead of waiting on the CloudKit round
+        // trip + a full history reload — the send below still happens, just
+        // without blocking the bubble from appearing.
+        let recipientID: UUID? = { if case .direct(let partner) = mode { return partner.id }; return nil }()
+        messages.append(ChatMessage(groupID: groupID, senderID: currentUser.id, recipientID: recipientID, text: text))
+
         switch mode {
         case .group:
             try? await chatRepository.sendGroupMessage(groupID: groupID, senderID: currentUser.id, text: text)
         case .direct(let partner):
             try? await chatRepository.sendDirectMessage(groupID: groupID, senderID: currentUser.id, recipientID: partner.id, text: text)
         }
-        await load()
     }
 }

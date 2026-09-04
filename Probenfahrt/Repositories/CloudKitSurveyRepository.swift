@@ -63,6 +63,13 @@ final class CloudKitSurveyRepository: SurveyRepository {
         return try await allRecords(matching: query).map(Self.entry(from:))
     }
 
+    func entries(forDayIDs dayIDs: [UUID]) async throws -> [SurveyEntry] {
+        guard !dayIDs.isEmpty else { return [] }
+        let predicate = NSPredicate(format: "%K IN %@", EntryField.surveyDayID, dayIDs.map(\.uuidString))
+        let query = CKQuery(recordType: RecordType.entry, predicate: predicate)
+        return try await allRecords(matching: query).map(Self.entry(from:))
+    }
+
     func signIn(userID: UUID, dayID: UUID) async throws {
         guard let day = try await fetchDay(id: dayID), !day.isLocked else { return }
         let recordID = Self.entryRecordID(dayID: dayID, userID: userID)

@@ -3,6 +3,8 @@ import SwiftUI
 struct RootTabView: View {
     @Environment(SessionStore.self) private var session
     @Environment(DevModeStore.self) private var devMode
+    @Environment(UnreadMessagesStore.self) private var unreadMessages
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var currentUser: User?
     @State private var featureOnboarding = FeatureOnboardingStore()
@@ -31,6 +33,10 @@ struct RootTabView: View {
                 isShowingFeatureOnboarding = false
             }
         }
+        .onChange(of: scenePhase) {
+            guard scenePhase == .active, let currentUser else { return }
+            Task { await unreadMessages.refresh(currentUser: currentUser) }
+        }
     }
 
     private func labTeamTabs(for currentUser: User) -> some View {
@@ -46,6 +52,7 @@ struct RootTabView: View {
 
             ChatView(currentUser: currentUser)
                 .tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right") }
+                .badge(unreadMessages.unreadCount)
 
             SettingsView(currentUser: currentUser, onCurrentUserUpdated: { updated in
                 self.currentUser = updated
@@ -88,6 +95,13 @@ struct RootTabView: View {
         currentUser = user
         if !featureOnboarding.hasSeenFeatureOnboarding {
             isShowingFeatureOnboarding = true
+        }
+        await unreadMessages.refresh(currentUser: user)
+        if let groupID = user.groupID {
+            // Fire-and-forget: (re-)registering push subscriptions is a
+            // background convenience, not something the tab UI needs to
+            // block on.
+            Task { await ChatPushSubscriptions.ensure(groupID: groupID, currentUserID: user.id) }
         }
     }
 }

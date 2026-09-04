@@ -55,14 +55,17 @@ struct PastSurveysView: View {
             let newBlocks = SurveyWeekWindow.pastWeekBlocks(from: .now)
             guard let start = newBlocks.last?.weekStart, let end = newBlocks.first?.weekEnd else { return }
             let days = try await surveyRepository.existingSurveyDays(from: start, to: end, groupID: groupID)
+            let entriesByDayID = Dictionary(
+                grouping: try await surveyRepository.entries(forDayIDs: days.map(\.id)),
+                by: \.surveyDayID
+            )
             var newRowsByBlock: [Date: [SurveyDayRow]] = [:]
             for block in newBlocks {
-                var rows: [SurveyDayRow] = []
-                for day in days where block.days.contains(where: { Calendar.current.isDate($0, inSameDayAs: day.date) }) {
-                    let entries = try await surveyRepository.entries(forDayID: day.id)
-                    rows.append(SurveyDayRow(day: day, entries: entries))
-                }
-                newRowsByBlock[block.weekStart] = rows.sorted { $0.day.date < $1.day.date }
+                let rows = days
+                    .filter { day in block.days.contains { Calendar.current.isDate($0, inSameDayAs: day.date) } }
+                    .map { day in SurveyDayRow(day: day, entries: entriesByDayID[day.id] ?? []) }
+                    .sorted { $0.day.date < $1.day.date }
+                newRowsByBlock[block.weekStart] = rows
             }
             blocks = newBlocks
             rowsByBlock = newRowsByBlock
