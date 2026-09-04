@@ -44,14 +44,33 @@ final class CloudKitUserRepository: UserRepository {
     // MARK: - Group seeding (not part of UserRepository — only MockDataSeeder
     // ever creates a group; there's no in-app "create group" flow)
 
-    /// Idempotent find-or-create keyed by `joinCode` — safe to call on every
-    /// launch without ever creating a duplicate group.
+    /// Idempotent find-or-create keyed by the lowercased `joinCode` — safe to
+    /// call on every launch without ever creating a duplicate group. Codes
+    /// are stored lowercased (see `resolveJoinCode`, which queries with a
+    /// plain `==` — CloudKit's query engine doesn't reliably support the
+    /// `[c]` case-insensitive predicate modifier, so case-insensitivity has
+    /// to happen by normalizing both sides instead of at query time).
     func ensureGroupExists(name: String, joinCode: String, pharmacyJoinCode: String) async throws -> TeamGroup {
-        let recordID = Self.groupRecordID(joinCode: joinCode)
+        let normalizedJoinCode = joinCode.lowercased()
+        let normalizedPharmacyJoinCode = pharmacyJoinCode.lowercased()
+        let recordID = Self.groupRecordID(joinCode: normalizedJoinCode)
+
         if let existing = try? await database.record(for: recordID) {
-            return Self.group(from: existing)
+            let current = Self.group(from: existing)
+            // Self-heals records created before codes were normalized to
+            // lowercase — keeps the existing id (Users already reference
+            // it) but refreshes the code fields so resolveJoinCode's
+            // exact-match query keeps finding them.
+            guard current.joinCode != normalizedJoinCode || current.pharmacyJoinCode != normalizedPharmacyJoinCode else {
+                return current
+            }
+            let healed = TeamGroup(id: current.id, name: current.name, joinCode: normalizedJoinCode, pharmacyJoinCode: normalizedPharmacyJoinCode, createdAt: current.createdAt)
+            Self.apply(healed, to: existing)
+            let saved = try await database.save(existing)
+            return Self.group(from: saved)
         }
-        let group = TeamGroup(name: name, joinCode: joinCode, pharmacyJoinCode: pharmacyJoinCode)
+
+        let group = TeamGroup(name: name, joinCode: normalizedJoinCode, pharmacyJoinCode: normalizedPharmacyJoinCode)
         let record = CKRecord(recordType: RecordType.group, recordID: recordID)
         Self.apply(group, to: record)
         let saved = try await database.save(record)
@@ -80,15 +99,15 @@ final class CloudKitUserRepository: UserRepository {
     }
 
     func resolveJoinCode(_ code: String) async throws -> GroupJoinResult? {
-        let normalized = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalized = code.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !normalized.isEmpty else { return nil }
 
-        let joinCodePredicate = NSPredicate(format: "%K ==[c] %@", GroupField.joinCode, normalized)
+        let joinCodePredicate = NSPredicate(format: "%K == %@", GroupField.joinCode, normalized)
         if let record = try await allRecords(matching: CKQuery(recordType: RecordType.group, predicate: joinCodePredicate)).first {
             return GroupJoinResult(group: Self.group(from: record), accountKind: .labTeam)
         }
 
-        let pharmacyPredicate = NSPredicate(format: "%K ==[c] %@", GroupField.pharmacyJoinCode, normalized)
+        let pharmacyPredicate = NSPredicate(format: "%K == %@", GroupField.pharmacyJoinCode, normalized)
         if let record = try await allRecords(matching: CKQuery(recordType: RecordType.group, predicate: pharmacyPredicate)).first {
             return GroupJoinResult(group: Self.group(from: record), accountKind: .pharmacy)
         }
