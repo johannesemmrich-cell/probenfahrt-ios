@@ -26,21 +26,34 @@ enum MockDataSeeder {
             name: "Laborteam Nord",
             joinCode: testGroupJoinCode,
             pharmacyJoinCode: testGroupPharmacyJoinCode
-        ) else { return }
+        ) else {
+            print("⚠️ MockDataSeeder: TeamGroup konnte nicht angelegt/gefunden werden (CloudKit nicht erreichbar?).")
+            return
+        }
 
         #if DEBUG
-        guard let existingUsers = try? await userRepository.allUsers(inGroup: group.id), existingUsers.isEmpty else { return }
+        guard let existingUsers = try? await userRepository.allUsers(inGroup: group.id), existingUsers.isEmpty else {
+            print("MockDataSeeder: Gruppe hat schon Mitglieder (oder Abfrage fehlgeschlagen) — überspringe Demo-Seeding.")
+            return
+        }
 
+        print("MockDataSeeder: Seede \(seedUsers.count) Test-Nutzer …")
         var users: [User] = []
         for seed in seedUsers {
             guard let user = try? await userRepository.createSeedUser(
                 name: seed.name, abbreviation: seed.abbreviation, role: seed.role, groupID: group.id
-            ) else { return }
+            ) else {
+                print("⚠️ MockDataSeeder: Anlegen von \(seed.name) fehlgeschlagen, breche Seeding ab.")
+                return
+            }
             users.append(user)
         }
 
+        print("MockDataSeeder: Nutzer fertig, seede Umfrage-Historie …")
         await seedSurveyDays(groupID: group.id, users: users)
+        print("MockDataSeeder: Umfrage-Historie fertig, seede Chat-Nachrichten …")
         await seedChatMessages(groupID: group.id, users: users)
+        print("✅ MockDataSeeder: Fertig — Testdaten vollständig angelegt.")
         #endif
     }
 

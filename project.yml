@@ -20,6 +20,12 @@ settings:
     MARKETING_VERSION: "1.0"
     CURRENT_PROJECT_VERSION: "1"
     CODE_SIGN_STYLE: Automatic
+    # Fest eingetragen (HENEMM GmbH), statt es jedes Mal manuell in Xcode
+    # unter Signing & Capabilities auszuwählen — sonst setzt jedes
+    # `xcodegen generate` (Probenfahrt.xcodeproj wird komplett neu erzeugt,
+    # nicht eingecheckt) das Team wieder auf "None" zurück, weil project.yml
+    # bis hierhin keine Team-ID kannte.
+    DEVELOPMENT_TEAM: XK87E2B3VR
     ENABLE_PREVIEWS: YES
 
 targets:
