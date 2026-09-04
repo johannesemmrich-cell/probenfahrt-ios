@@ -35,7 +35,11 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: Probenfahrt
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        # App Store Connect verlangt seit Kurzem alle 4 Ausrichtungen im
+        # Bundle (iPad-Multitasking-Kompatibilität, auch für reine
+        # iPhone-Apps) — der tatsächliche Portrait-only-Zwang läuft über
+        # AppDelegate.supportedInterfaceOrientations(for:) in App.swift.
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         CODE_SIGN_ENTITLEMENTS: Probenfahrt/Probenfahrt.entitlements
