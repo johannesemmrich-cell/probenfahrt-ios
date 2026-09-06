@@ -7,7 +7,7 @@ struct ChatView: View {
     @Environment(UnreadMessagesStore.self) private var unreadMessages
     @State private var users: [User] = []
 
-    private var userRepository: UserRepository { CloudKitUserRepository() }
+    private let userRepository: UserRepository = CloudKitUserRepository()
 
     private var otherUsers: [User] {
         users.filter { $0.id != currentUser.id }.sorted { $0.name < $1.name }

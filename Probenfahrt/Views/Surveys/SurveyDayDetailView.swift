@@ -1,21 +1,24 @@
 import SwiftUI
 
 struct SurveyDayDetailView: View {
-    let row: SurveyDayRow
     let users: [User]
     let currentUser: User
+    var onRowChanged: (SurveyDayRow) -> Void = { _ in }
 
     @Environment(AdminPreviewStore.self) private var adminPreview
     @Environment(DevModeStore.self) private var devMode
 
+    @State private var day: SurveyDay
     @State private var entries: [SurveyEntry]
+    @State private var lockErrorMessage: String?
 
-    private var surveyRepository: SurveyRepository { CloudKitSurveyRepository() }
+    private let surveyRepository: SurveyRepository = CloudKitSurveyRepository()
 
-    init(row: SurveyDayRow, users: [User], currentUser: User) {
-        self.row = row
+    init(row: SurveyDayRow, users: [User], currentUser: User, onRowChanged: @escaping (SurveyDayRow) -> Void = { _ in }) {
         self.users = users
         self.currentUser = currentUser
+        self.onRowChanged = onRowChanged
+        _day = State(initialValue: row.day)
         _entries = State(initialValue: row.entries)
     }
 
@@ -55,13 +58,13 @@ struct SurveyDayDetailView: View {
                                         .foregroundStyle(signedInUserIDs.contains(user.id) ? .green : .secondary)
                                 }
                             }
-                            .disabled(row.day.isLocked)
+                            .disabled(day.isLocked)
                         }
                     }
                 } header: {
                     Text("Teilnehmer verwalten")
                 } footer: {
-                    Text(row.day.isLocked
+                    Text(day.isLocked
                          ? "Tag ist gesperrt — erst Sperre aufheben, um Teilnehmer zu ändern."
                          : "Tippe auf eine Person, um sie für diesen Tag ein- oder auszutragen.")
                 }
@@ -79,36 +82,49 @@ struct SurveyDayDetailView: View {
 
             if isAdmin {
                 Section("Admin") {
-                    Button(row.day.isLocked ? "Sperre aufheben" : "Tag sperren") {
+                    Button(day.isLocked ? "Sperre aufheben" : "Tag sperren") {
                         Task { await toggleLock() }
                     }
-                    .foregroundStyle(row.day.isLocked ? Color.primary : Color.red)
+                    .foregroundStyle(day.isLocked ? Color.primary : Color.red)
                 }
             }
         }
-        .navigationTitle(row.day.date.formatted(.dateTime.weekday(.wide).day().month().locale(.app)))
+        .navigationTitle(day.date.formatted(.dateTime.weekday(.wide).day().month().locale(.app)))
         .navigationBarTitleDisplayMode(.inline)
+        .alert("Sperren fehlgeschlagen", isPresented: Binding(
+            get: { lockErrorMessage != nil },
+            set: { if !$0 { lockErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(lockErrorMessage ?? "")
+        }
     }
 
     private func toggleEntry(for user: User) async {
         do {
             if signedInUserIDs.contains(user.id) {
-                try await surveyRepository.signOut(userID: user.id, dayID: row.day.id)
+                try await surveyRepository.signOut(userID: user.id, dayID: day.id)
             } else {
-                try await surveyRepository.signIn(userID: user.id, dayID: row.day.id)
+                try await surveyRepository.signIn(userID: user.id, dayID: day.id)
             }
-            entries = try await surveyRepository.entries(forDayID: row.day.id)
+            entries = try await surveyRepository.entries(forDayID: day.id)
+            onRowChanged(SurveyDayRow(day: day, entries: entries))
         } catch {
             // Transient failure — reopening the screen resyncs.
         }
     }
 
     private func toggleLock() async {
-        let newValue = !row.day.isLocked
-        try? await surveyRepository.setLocked(
-            newValue,
-            reason: newValue ? "Wird an diesem Tag nicht gefahren" : nil,
-            dayID: row.day.id
-        )
+        let newValue = !day.isLocked
+        let newReason = newValue ? "Wird an diesem Tag nicht gefahren" : nil
+        do {
+            try await surveyRepository.setLocked(newValue, reason: newReason, dayID: day.id)
+            day.isLocked = newValue
+            day.lockReason = newReason
+            onRowChanged(SurveyDayRow(day: day, entries: entries))
+        } catch {
+            lockErrorMessage = "Die Änderung konnte nicht gespeichert werden. Bitte Internetverbindung prüfen und erneut versuchen."
+        }
     }
 }

@@ -13,8 +13,8 @@ struct PastSurveysView: View {
     @State private var users: [User] = []
     @State private var hasLoadedOnce = false
 
-    private var surveyRepository: SurveyRepository { CloudKitSurveyRepository() }
-    private var userRepository: UserRepository { CloudKitUserRepository() }
+    private let surveyRepository: SurveyRepository = CloudKitSurveyRepository()
+    private let userRepository: UserRepository = CloudKitUserRepository()
 
     private var nonEmptyBlocks: [SurveyWeekWindow.WeekBlock] {
         blocks.filter { !(rowsByBlock[$0.weekStart] ?? []).isEmpty }

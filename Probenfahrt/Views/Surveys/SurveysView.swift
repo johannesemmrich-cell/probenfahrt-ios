@@ -11,8 +11,8 @@ struct SurveysView: View {
     @State private var users: [User] = []
     @State private var hasLoadedOnce = false
 
-    private var surveyRepository: SurveyRepository { CloudKitSurveyRepository() }
-    private var userRepository: UserRepository { CloudKitUserRepository() }
+    private let surveyRepository: SurveyRepository = CloudKitSurveyRepository()
+    private let userRepository: UserRepository = CloudKitUserRepository()
 
     var body: some View {
         NavigationStack {
@@ -25,6 +25,8 @@ struct SurveysView: View {
                         ForEach(rowsByBlock[block.weekStart] ?? []) { row in
                             SurveyDayCard(row: row, users: users, currentUser: currentUser) {
                                 await toggleSignIn(row: row)
+                            } onRowChanged: { updatedRow in
+                                replaceRow(updatedRow)
                             }
                             .listRowBackground(row.entries.count == 1 ? Color.green.opacity(0.15) : nil)
                         }
@@ -105,6 +107,19 @@ struct SurveysView: View {
             }
             var updatedRows = rows
             updatedRows[index] = SurveyDayRow(day: rows[index].day, entries: entries)
+            rowsByBlock[weekStart] = updatedRows
+            return
+        }
+    }
+
+    /// Called when SurveyDayDetailView changes a day (lock state or admin-
+    /// managed participants) so the list reflects it immediately instead of
+    /// only after a manual pull-to-refresh.
+    private func replaceRow(_ updatedRow: SurveyDayRow) {
+        for (weekStart, rows) in rowsByBlock {
+            guard let index = rows.firstIndex(where: { $0.day.id == updatedRow.day.id }) else { continue }
+            var updatedRows = rows
+            updatedRows[index] = updatedRow
             rowsByBlock[weekStart] = updatedRows
             return
         }

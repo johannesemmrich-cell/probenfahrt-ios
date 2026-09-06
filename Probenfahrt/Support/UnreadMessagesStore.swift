@@ -50,27 +50,31 @@ final class UnreadMessagesStore {
             unreadCountsByConversation = [:]
             return
         }
-        do {
-            var countsByConversation: [String: Int] = [:]
+        // Each conversation's count is fetched independently and starts from
+        // the previous known value: one conversation's query failing (e.g. a
+        // transient CloudKit error) must not wipe out already-good counts
+        // for every other conversation, group included.
+        var countsByConversation = unreadCountsByConversation
 
-            let groupMessages = try await chatRepository.groupMessages(groupID: groupID)
+        if let groupMessages = try? await chatRepository.groupMessages(groupID: groupID) {
             let groupLastRead = lastRead(conversationKey: Self.groupConversationKey)
             countsByConversation[Self.groupConversationKey] =
                 groupMessages.filter { $0.senderID != currentUser.id && $0.createdAt > groupLastRead }.count
+        }
 
-            let partnerIDs = try await chatRepository.conversationPartnerIDs(groupID: groupID, currentUserID: currentUser.id)
+        if let partnerIDs = try? await chatRepository.conversationPartnerIDs(groupID: groupID, currentUserID: currentUser.id) {
             for partnerID in partnerIDs {
-                let messages = try await chatRepository.directMessages(groupID: groupID, between: currentUser.id, and: partnerID)
+                guard let messages = try? await chatRepository.directMessages(groupID: groupID, between: currentUser.id, and: partnerID) else {
+                    continue
+                }
                 let partnerLastRead = lastRead(conversationKey: partnerID.uuidString)
                 countsByConversation[partnerID.uuidString] =
                     messages.filter { $0.senderID == partnerID && $0.createdAt > partnerLastRead }.count
             }
-
-            unreadCountsByConversation = countsByConversation
-            unreadCount = countsByConversation.values.reduce(0, +)
-            try? await UNUserNotificationCenter.current().setBadgeCount(unreadCount)
-        } catch {
-            // Transient failure — badges just stay at their last known value.
         }
+
+        unreadCountsByConversation = countsByConversation
+        unreadCount = countsByConversation.values.reduce(0, +)
+        try? await UNUserNotificationCenter.current().setBadgeCount(unreadCount)
     }
 }

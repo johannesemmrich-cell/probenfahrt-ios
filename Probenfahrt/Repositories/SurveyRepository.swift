@@ -5,6 +5,13 @@ struct SurveyEntryWithDate {
     let date: Date
 }
 
+enum SurveyRepositoryError: Error {
+    /// The day was locked by an admin after this screen's data was loaded —
+    /// callers should treat this like any other failed write (roll back
+    /// optimistic UI, reload) rather than silently no-op.
+    case dayLocked
+}
+
 @MainActor
 protocol SurveyRepository {
     /// Fetches survey days (Mon–Thu only) in the given range, lazily creating

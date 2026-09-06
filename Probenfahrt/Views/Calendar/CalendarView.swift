@@ -8,14 +8,19 @@ struct CalendarView: View {
         case week = "Woche"
     }
 
+    private struct LoadTrigger: Equatable {
+        let referenceDate: Date
+        let viewMode: ViewMode
+    }
+
     @Environment(DevModeStore.self) private var devMode
     @State private var referenceDate = Calendar.current.startOfDay(for: .now)
     @State private var viewMode: ViewMode = .month
     @State private var rows: [SurveyDayRow] = []
     @State private var users: [User] = []
 
-    private var surveyRepository: SurveyRepository { CloudKitSurveyRepository() }
-    private var userRepository: UserRepository { CloudKitUserRepository() }
+    private let surveyRepository: SurveyRepository = CloudKitSurveyRepository()
+    private let userRepository: UserRepository = CloudKitUserRepository()
 
     var body: some View {
         NavigationStack {
@@ -38,7 +43,7 @@ struct CalendarView: View {
             }
             .navigationTitle("Kalender")
             .developerFeedbackOverlay(isActive: devMode.isActive, screen: "Kalender", feature: "Monats-/Wochenansicht", element: "Grid")
-            .task(id: referenceDate) { await load() }
+            .task(id: LoadTrigger(referenceDate: referenceDate, viewMode: viewMode)) { await load() }
         }
     }
 

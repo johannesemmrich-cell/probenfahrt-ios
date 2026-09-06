@@ -16,7 +16,7 @@ struct ConversationView: View {
     @State private var draft = ""
     @State private var didInitialScroll = false
 
-    private var chatRepository: ChatRepository { CloudKitChatRepository() }
+    private let chatRepository: ChatRepository = CloudKitChatRepository()
 
     private var title: String {
         switch mode {

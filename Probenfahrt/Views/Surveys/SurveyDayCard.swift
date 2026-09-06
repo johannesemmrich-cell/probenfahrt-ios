@@ -5,6 +5,7 @@ struct SurveyDayCard: View {
     let users: [User]
     let currentUser: User
     let onToggle: () async -> Void
+    var onRowChanged: (SurveyDayRow) -> Void = { _ in }
 
     @Environment(AdminPreviewStore.self) private var adminPreview
     @Environment(DevModeStore.self) private var devMode
@@ -22,7 +23,7 @@ struct SurveyDayCard: View {
     var body: some View {
         HStack {
             NavigationLink {
-                SurveyDayDetailView(row: row, users: users, currentUser: currentUser)
+                SurveyDayDetailView(row: row, users: users, currentUser: currentUser, onRowChanged: onRowChanged)
             } label: {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
@@ -34,6 +35,9 @@ struct SurveyDayCard: View {
                             Text("!")
                                 .font(.headline.weight(.bold))
                                 .foregroundStyle(.red)
+                        } else if row.entries.count == 1 {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
                         }
                     }
 
@@ -66,7 +70,7 @@ struct SurveyDayCard: View {
                     .tint(isSignedIn ? .red : .accentColor)
                 } else if isEffectiveAdmin(user: currentUser, adminPreview: adminPreview, devMode: devMode) {
                     NavigationLink {
-                        SurveyDayDetailView(row: row, users: users, currentUser: currentUser)
+                        SurveyDayDetailView(row: row, users: users, currentUser: currentUser, onRowChanged: onRowChanged)
                     } label: {
                         Text("Verwalten")
                     }
