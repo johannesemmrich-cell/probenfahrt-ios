@@ -124,7 +124,7 @@ struct SurveyDayDetailView: View {
             day.lockReason = newReason
             onRowChanged(SurveyDayRow(day: day, entries: entries))
         } catch {
-            lockErrorMessage = "Die Änderung konnte nicht gespeichert werden. Bitte Internetverbindung prüfen und erneut versuchen."
+            lockErrorMessage = "Die Änderung konnte nicht gespeichert werden.\n\nFehlerdetails: \(error)"
         }
     }
 }
