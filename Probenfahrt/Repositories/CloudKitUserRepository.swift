@@ -39,6 +39,7 @@ final class CloudKitUserRepository: UserRepository {
         static let accountKind = "accountKind"
         static let groupID = "groupID"
         static let createdAt = "createdAt"
+        static let webPassword = "webPassword"
     }
 
     // MARK: - Group seeding (not part of UserRepository — only MockDataSeeder
@@ -151,6 +152,13 @@ final class CloudKitUserRepository: UserRepository {
         _ = try await database.save(record)
     }
 
+    func setWebPassword(_ password: String?, for id: UUID) async throws {
+        guard let record = try? await database.record(for: Self.userRecordID(id: id)) else { return }
+        let trimmed = password?.trimmingCharacters(in: .whitespacesAndNewlines)
+        record[UserField.webPassword] = (trimmed?.isEmpty == false ? trimmed : nil) as CKRecordValue?
+        _ = try await database.save(record)
+    }
+
     func deleteUser(id: UUID, bypassLastAdminGuard: Bool = false) async throws {
         guard let user = try await user(id: id) else { return }
         if !bypassLastAdminGuard, let groupID = user.groupID {
@@ -214,6 +222,7 @@ final class CloudKitUserRepository: UserRepository {
         record[UserField.accountKind] = user.accountKind.rawValue as CKRecordValue
         record[UserField.groupID] = user.groupID?.uuidString as CKRecordValue?
         record[UserField.createdAt] = user.createdAt as CKRecordValue
+        record[UserField.webPassword] = user.webPassword as CKRecordValue?
     }
 
     private static func user(from record: CKRecord) -> User {
@@ -228,7 +237,8 @@ final class CloudKitUserRepository: UserRepository {
             role: role,
             accountKind: accountKind,
             groupID: groupID,
-            createdAt: (record[UserField.createdAt] as? Date) ?? .now
+            createdAt: (record[UserField.createdAt] as? Date) ?? .now,
+            webPassword: record[UserField.webPassword] as? String
         )
     }
 }

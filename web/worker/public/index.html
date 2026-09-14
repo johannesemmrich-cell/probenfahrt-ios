@@ -51,6 +51,19 @@
   button:disabled { opacity: 0.5; cursor: default; }
   button.primary { background: #34c759; color: #fff; }
   button.secondary { background: #f2f2f7; color: #1c1c1e; border: 1px solid #d1d1d6; }
+  input[type="password"] {
+    display: block;
+    width: 100%;
+    padding: 14px;
+    font-size: 1.05rem;
+    border-radius: 14px;
+    border: 1px solid #d1d1d6;
+    margin-bottom: 12px;
+    box-sizing: border-box;
+  }
+  @media (prefers-color-scheme: dark) {
+    input[type="password"] { background: #1c1c1e; color: #f2f2f7; border-color: #3a3a3c; }
+  }
   .status { margin-top: 16px; font-size: 0.95rem; font-weight: 600; }
   .status.yes { color: #34c759; }
   .status.no { color: #6e6e73; }
@@ -100,8 +113,52 @@
   // — for looking at the design without any backend set up.
   const isDemo = token === "demo";
 
+  function renderLogin(errorText) {
+    render(
+      '<h1>Probenfahrt</h1>' +
+      '<p class="muted">Ohne QR-Code anmelden</p>' +
+      '<input type="password" id="passwordInput" placeholder="Passwort" autocomplete="current-password" />' +
+      '<button class="primary" id="loginBtn">Anmelden</button>' +
+      (errorText ? '<p class="error">' + escapeHtml(errorText) + '</p>' : '') +
+      '<div class="brand">Probenfahrt</div>'
+    );
+    const input = document.getElementById("passwordInput");
+    const button = document.getElementById("loginBtn");
+    const submit = function () { login(input.value); };
+    button.addEventListener("click", submit);
+    input.addEventListener("keydown", function (e) { if (e.key === "Enter") submit(); });
+    input.focus();
+  }
+
+  async function login(password) {
+    if (!password) { renderLogin("Bitte Passwort eingeben."); return; }
+    try {
+      const response = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: password })
+      });
+      if (response.status === 401) {
+        renderLogin("Falsches Passwort.");
+        return;
+      }
+      if (!response.ok) {
+        renderLogin("Verbindung fehlgeschlagen. Bitte erneut versuchen.");
+        return;
+      }
+      const data = await response.json();
+      render(
+        '<h1>Hallo, ' + escapeHtml(data.name) + '</h1>' +
+        '<p class="muted">' + escapeHtml(data.abbreviation) + '</p>' +
+        '<div class="brand">Probenfahrt</div>'
+      );
+    } catch (e) {
+      renderLogin("Verbindung fehlgeschlagen. Bitte erneut versuchen.");
+    }
+  }
+
   if (!isDemo && !token) {
-    showError("Kein Apotheken-Code in diesem Link gefunden. Bitte den QR-Code erneut scannen.");
+    renderLogin();
     return;
   }
 

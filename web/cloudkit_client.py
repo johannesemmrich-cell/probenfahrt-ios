@@ -88,6 +88,25 @@ class CloudKitClient:
             "name": fields["name"]["value"],
         }
 
+    def find_user_by_password(self, password):
+        body = {
+            "query": {
+                "recordType": "User",
+                "filterBy": [
+                    {"fieldName": "webPassword", "comparator": "EQUALS", "fieldValue": {"value": password, "type": "STRING"}}
+                ],
+            }
+        }
+        result = self._sign_and_post(self._database_path("records/query"), body)
+        records = result.get("records", [])
+        if not records or "fields" not in records[0]:
+            return None
+        fields = records[0]["fields"]
+        return {
+            "name": fields.get("name", {}).get("value", ""),
+            "abbreviation": fields.get("abbreviation", {}).get("value", ""),
+        }
+
     def get_report(self, record_name):
         body = {"records": [{"recordName": record_name}]}
         result = self._sign_and_post(self._database_path("records/lookup"), body)

@@ -15,6 +15,7 @@ struct MemberDetailView: View {
     @Environment(DevModeStore.self) private var devMode
 
     @State private var abbreviation: String
+    @State private var webPassword: String
     @State private var errorMessage: String?
     @State private var allEntries: [SurveyEntryWithDate] = []
     @State private var period: StatPeriod = .week
@@ -32,6 +33,7 @@ struct MemberDetailView: View {
         self.currentUser = currentUser
         self.onRemoved = onRemoved
         _abbreviation = State(initialValue: user.abbreviation)
+        _webPassword = State(initialValue: user.webPassword ?? "")
     }
 
     private var periodComponent: Calendar.Component { period == .week ? .weekOfYear : .month }
@@ -69,6 +71,19 @@ struct MemberDetailView: View {
                 }
                 LabeledContent("Beigetreten am", value: user.createdAt.formatted(.dateTime.day().month().year().locale(.app)))
                 LabeledContent("Rolle", value: roleLabel)
+            }
+
+            if isFullAdmin {
+                Section {
+                    TextField("Passwort (leer = kein Zugang)", text: $webPassword)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .onSubmit { Task { await saveWebPassword() } }
+                } header: {
+                    Text("Web-Zugang")
+                } footer: {
+                    Text("Mit diesem Passwort kann sich \(user.name) auf mediproben.com anmelden, ohne einen QR-Code zu scannen. Feld leeren und speichern entfernt den Zugang wieder.")
+                }
             }
 
             Section("Fahrten") {
@@ -190,6 +205,10 @@ struct MemberDetailView: View {
             }
         }
         try? await userRepository.updateUser(id: user.id, name: user.name, abbreviation: trimmed)
+    }
+
+    private func saveWebPassword() async {
+        try? await userRepository.setWebPassword(webPassword, for: user.id)
     }
 
     private func setViceAdmin(_ isOn: Bool) async {

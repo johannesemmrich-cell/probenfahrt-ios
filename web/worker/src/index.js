@@ -120,6 +120,32 @@ async function findLocationByToken(env, token) {
   };
 }
 
+/**
+ * Web-only login (no QR code / token): an admin assigns each team member an
+ * optional password in the app (MemberDetailView) so they can identify
+ * themselves here without scanning anything. Deliberately no session/cookie
+ * yet and no functionality beyond the greeting - see BACKLOG/chat, this is
+ * step one of a feature that's still being scoped out.
+ */
+async function findUserByPassword(env, password) {
+  const body = {
+    query: {
+      recordType: "User",
+      filterBy: [
+        { fieldName: "webPassword", comparator: "EQUALS", fieldValue: { value: password, type: "STRING" } },
+      ],
+    },
+  };
+  const result = await signAndPost(env, databasePath(env, "records/query"), body);
+  const records = result.records || [];
+  if (!records.length || !records[0].fields) return null;
+  const fields = records[0].fields;
+  return {
+    name: fields.name ? fields.name.value : "",
+    abbreviation: fields.abbreviation ? fields.abbreviation.value : "",
+  };
+}
+
 function reportRecordName(locationId, day) {
   const iso = day.toISOString().slice(0, 10);
   return `report-${locationId}-${iso}`;
@@ -206,6 +232,25 @@ async function handlePostReport(request, env) {
   }
 }
 
+async function handlePostLogin(request, env) {
+  let password;
+  try {
+    const payload = await request.json();
+    password = payload.password;
+    if (!password) throw new Error("password fehlt");
+  } catch {
+    return jsonResponse(400, { error: "Ungültige Anfrage" });
+  }
+
+  try {
+    const user = await findUserByPassword(env, password);
+    if (!user) return jsonResponse(401, { error: "Falsches Passwort" });
+    return jsonResponse(200, user);
+  } catch (error) {
+    return jsonResponse(502, { error: String(error), detail: error.detail });
+  }
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -214,6 +259,9 @@ export default {
     }
     if (request.method === "POST" && url.pathname === "/api/report") {
       return handlePostReport(request, env);
+    }
+    if (request.method === "POST" && url.pathname === "/api/login") {
+      return handlePostLogin(request, env);
     }
     // Alles andere (/, /index.html, ...) wird schon automatisch von den
     // Workers Static Assets aus public/ ausgeliefert, bevor dieser Fetch-

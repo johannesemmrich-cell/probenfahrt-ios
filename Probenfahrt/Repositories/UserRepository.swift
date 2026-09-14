@@ -38,4 +38,7 @@ protocol UserRepository {
     /// passes.
     func setRole(id: UUID, role: UserRole, bypassLastAdminGuard: Bool) async throws
     func deleteUser(id: UUID, bypassLastAdminGuard: Bool) async throws
+    /// Admin-assigned password for the web check-in login (mediproben.com,
+    /// see MemberDetailView) - pass nil/empty to clear it.
+    func setWebPassword(_ password: String?, for id: UUID) async throws
 }
