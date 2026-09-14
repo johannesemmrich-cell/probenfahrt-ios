@@ -79,6 +79,11 @@ struct MemberDetailView: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .onSubmit { Task { await saveWebPassword() } }
+                        // onSubmit alone only fires on the keyboard's Return
+                        // key - navigating back without pressing it silently
+                        // dropped the typed password. onDisappear catches
+                        // every way of leaving this screen.
+                        .onDisappear { Task { await saveWebPassword() } }
                 } header: {
                     Text("Web-Zugang")
                 } footer: {
