@@ -167,6 +167,55 @@ Apotheken verwalten** → Apotheke antippen. Die Basis-URL für QR-Codes ist
 dort editierbar (Default `http://localhost:8080` — für echtes Scannen per
 Handy im selben WLAN durch die LAN-IP ersetzen, siehe Hinweistext dort).
 
+### Apotheken-Web-Check-in produktiv unter mediproben.com (Cloudflare Worker)
+
+`web/worker/` ist eine zweite, produktionsreife Implementierung derselben
+Seite/API (identisches Protokoll wie `proxy_server.py`), aber als Cloudflare
+Worker statt als lokal laufendem Python-Prozess — nötig, damit die Seite
+dauerhaft unter einer echten Domain erreichbar ist, ohne dass dafür ein Mac
+oder Server rund um die Uhr laufen muss. Läuft im selben Cloudflare-Account
+wie emmrich-business.com.
+
+Wichtigster Unterschied zu `cloudkit_client.py`: Cloudflares Web-Crypto-API
+liefert ECDSA-Signaturen im rohen IEEE-P1363-Format (r||s), CloudKit
+erwartet aber DER-kodierte Signaturen — `src/index.js` konvertiert das per
+Hand (`derEncodeSignature`), gegen einen Test-Key mit OpenSSL verifiziert.
+
+Setup (einmalig):
+
+```bash
+cd web/worker
+npx wrangler login                     # falls noch nicht angemeldet
+npx wrangler secret put CLOUDKIT_PRIVATE_KEY_PKCS8_BASE64
+# ^ erwartet den Private Key als PKCS8 (nicht das SEC1-Format aus eckey.pem):
+#   openssl pkcs8 -topk8 -nocrypt -in ../eckey.pem -out ../eckey_pkcs8.pem
+#   dann den Base64-Inhalt zwischen den PEM-Headerzeilen eingeben
+npx wrangler deploy
+```
+
+`wrangler.toml` enthält `CONTAINER_IDENTIFIER`/`CLOUDKIT_ENVIRONMENT`/
+`CLOUDKIT_KEY_ID` als unkritische Variablen (analog `server_config.py`) und
+eine `routes`-Konfiguration mit `custom_domain = true` für
+`mediproben.com` — das provisioniert DNS-Eintrag + TLS-Zertifikat
+automatisch, weil die Domain schon als Zone in diesem Cloudflare-Account
+liegt. Kein separater VPS/Hosting-Anbieter nötig.
+
+**Stand 2026-09-14:** Live deployed, End-zu-Ende gegen echtes CloudKit
+**Development** getestet (`GET /api/pharmacy?token=<unbekannt>` liefert
+korrekt 404 "Unbekannter Apotheken-Code" statt eines Auth-Fehlers → Key
+funktioniert). Der alte Server-to-Server-Key wurde vorher aus
+Sicherheitsgründen rotiert (war über HTTP abrufbar) — der aktuelle Key in
+`eckey.pem`/`server_config.py`/`wrangler.toml` ist der neue, gültige Key.
+Vor echtem Rollout an Apotheken: CloudKit-Schema nach **Production**
+deployen und `CLOUDKIT_ENVIRONMENT` in `wrangler.toml` umstellen (siehe
+CloudKit-Setup Punkt 6 oben) sowie QR-Code-Basis-URL in der App auf
+`https://mediproben.com` setzen.
+
+Der Zugriffsschutz "nur per QR-Code, sonst Passwort" (admin-verwaltete
+Passwörter pro Nutzer in der App) ist eine geplante, noch nicht gebaute
+Erweiterung — aktuell ist die Seite ohne gültigen Token schon funktionslos
+(nur eine Fehlermeldung, keine Interaktion möglich).
+
 ## Test-Zugänge (Mock-Daten)
 
 Im Onboarding wird zuerst der Code abgefragt — er entscheidet, welchen

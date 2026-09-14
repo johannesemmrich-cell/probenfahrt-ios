@@ -16,5 +16,10 @@ DerivedData/
 # CloudKit Server-to-Server private key + server-only config — never commit
 # (see web/README setup steps)
 web/eckey.pem
+web/eckey_pkcs8.pem
 web/server_config.py
 __pycache__/
+
+# Cloudflare Worker deploy artifacts
+web/worker/.wrangler/
+web/worker/node_modules/

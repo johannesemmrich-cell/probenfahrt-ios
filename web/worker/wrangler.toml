@@ -1,0 +1,24 @@
+name = "probenfahrt-checkin"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+# Custom Domain: Cloudflare provisioniert DNS-Eintrag + TLS-Zertifikat
+# automatisch, weil mediproben.com schon als Zone in diesem Cloudflare-
+# Account liegt. Der geheime Private Key wird NIE hier eingetragen, sondern
+# per `wrangler secret put CLOUDKIT_PRIVATE_KEY_PKCS8_BASE64`.
+routes = [
+  { pattern = "mediproben.com", custom_domain = true }
+]
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+# Nicht geheim - dieselben Werte wie in web/server_config.py, siehe README.
+# Auf "production" umstellen, sobald das CloudKit-Schema per "Deploy Schema
+# Changes" nach Production deployed wurde (siehe README.md CloudKit-Setup
+# Punkt 6) - vorher liefert "production" nur leere/fehlende Records.
+[vars]
+CONTAINER_IDENTIFIER = "iCloud.com.johannesemmrich.probenfahrt"
+CLOUDKIT_ENVIRONMENT = "development"
+CLOUDKIT_KEY_ID = "3246716540467717da44ee82f5ac8f8fa61b532755cb510e4702e07252697542"
