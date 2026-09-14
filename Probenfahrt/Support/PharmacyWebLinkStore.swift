@@ -1,13 +1,13 @@
 import Foundation
 
-/// Base URL of the Apotheken-Web-Check-in (BACKLOG #3, see web/index.html)
-/// that every pharmacy's QR code points to. Starts out as a plain
-/// `python3 -m http.server` on localhost/the Mac's LAN IP; editable here so
-/// it can move to a real hosted URL later without a code change.
+/// Base URL of the Apotheken-Web-Check-in (BACKLOG #3, see web/worker/)
+/// that every pharmacy's QR code points to. Live at mediproben.com since
+/// 2026-09-14 (Cloudflare Worker) - still editable here in case a
+/// staging/local URL is ever needed again.
 @Observable
 final class PharmacyWebLinkStore {
     private let storageKey = "com.johannesemmrich.probenfahrt.pharmacyWebBaseURL"
-    private let defaultBaseURL = "http://localhost:8080"
+    private let defaultBaseURL = "https://mediproben.com"
 
     var baseURL: String {
         didSet { UserDefaults.standard.set(baseURL, forKey: storageKey) }
