@@ -99,7 +99,7 @@ für dich erledigen, dafür gibt es keine API:
    **Development**-Umgebung automatisch mit den passenden Feldern.
 4. **Felder als "Queryable" markieren.** Im Dashboard unter Schema:
    - `TeamGroup`: `joinCode`, `pharmacyJoinCode`
-   - `User`: `groupID`
+   - `User`: `groupID`, `webPassword`
    - `SurveyDay`: `groupID`, `date`, `dayID`
    - `SurveyEntry`: `surveyDayID`, `groupID`
    - `ChatMessage`: `groupID`, `senderID`, `recipientID`
@@ -211,10 +211,15 @@ deployen und `CLOUDKIT_ENVIRONMENT` in `wrangler.toml` umstellen (siehe
 CloudKit-Setup Punkt 6 oben) sowie QR-Code-Basis-URL in der App auf
 `https://mediproben.com` setzen.
 
-Der Zugriffsschutz "nur per QR-Code, sonst Passwort" (admin-verwaltete
-Passwörter pro Nutzer in der App) ist eine geplante, noch nicht gebaute
-Erweiterung — aktuell ist die Seite ohne gültigen Token schon funktionslos
-(nur eine Fehlermeldung, keine Interaktion möglich).
+**Stand 2026-09-15:** Der Zugriffsschutz "nur per QR-Code, sonst Passwort"
+ist als erster Schritt gebaut (admin-verwaltete Passwörter pro Nutzer in
+MemberDetailView, `POST /api/login` in beiden Backends) — ruft man
+mediproben.com ohne Token auf, erscheint jetzt ein Passwortfeld statt einer
+Fehlermeldung. Bewusst noch ohne Folgefunktion: bei richtigem Passwort
+erscheint nur eine Begrüßung mit Name, keine Session/Cookie, keine weitere
+Aktion möglich — das Wie geht's weiter ist mit dem User noch nicht
+abgestimmt. `webPassword` muss dafür wie oben (Punkt 4) als Queryable
+markiert sein, sonst schlägt der Login mit einem CloudKit-Fehler fehl.
 
 ## Test-Zugänge (Mock-Daten)
 

@@ -17,6 +17,7 @@ struct MemberDetailView: View {
     @State private var abbreviation: String
     @State private var webPassword: String
     @State private var errorMessage: String?
+    @State private var webPasswordErrorMessage: String?
     @State private var allEntries: [SurveyEntryWithDate] = []
     @State private var period: StatPeriod = .week
     @State private var referenceDate = Date.now
@@ -62,7 +63,10 @@ struct MemberDetailView: View {
                     TextField("Kürzel", text: $abbreviation)
                         .textInputAutocapitalization(.characters)
                         .autocorrectionDisabled()
-                        .onSubmit { Task { await saveAbbreviation() } }
+                        // onDisappear only (not also onSubmit) - fires on
+                        // every way of leaving this screen and avoids two
+                        // independent, unsequenced saves racing each other.
+                        .onDisappear { Task { await saveAbbreviation() } }
                 } else {
                     LabeledContent("Kürzel", value: user.abbreviation)
                 }
@@ -78,12 +82,17 @@ struct MemberDetailView: View {
                     TextField("Passwort (leer = kein Zugang)", text: $webPassword)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                        .onSubmit { Task { await saveWebPassword() } }
-                        // onSubmit alone only fires on the keyboard's Return
-                        // key - navigating back without pressing it silently
-                        // dropped the typed password. onDisappear catches
-                        // every way of leaving this screen.
+                        // onDisappear only (not also onSubmit, which only
+                        // fires on the keyboard's Return key) - covers every
+                        // in-app way of leaving this screen with exactly one
+                        // save, avoiding two unsequenced writes racing each
+                        // other. Doesn't cover backgrounding/force-quitting
+                        // the app while this screen stays mounted - the
+                        // typed value is lost in that case too.
                         .onDisappear { Task { await saveWebPassword() } }
+                    if let webPasswordErrorMessage {
+                        Text(webPasswordErrorMessage).font(.footnote).foregroundStyle(.red)
+                    }
                 } header: {
                     Text("Web-Zugang")
                 } footer: {
@@ -213,7 +222,16 @@ struct MemberDetailView: View {
     }
 
     private func saveWebPassword() async {
-        try? await userRepository.setWebPassword(webPassword, for: user.id)
+        webPasswordErrorMessage = nil
+        let trimmed = webPassword.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty, trimmed != (user.webPassword ?? "") {
+            if let taken = try? await userRepository.isWebPasswordTaken(trimmed, excluding: user.id), taken {
+                webPasswordErrorMessage = "Dieses Passwort ist schon einem anderen Mitglied zugewiesen."
+                webPassword = user.webPassword ?? ""
+                return
+            }
+        }
+        try? await userRepository.setWebPassword(trimmed, for: user.id)
     }
 
     private func setViceAdmin(_ isOn: Bool) async {

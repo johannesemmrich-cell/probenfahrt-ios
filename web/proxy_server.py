@@ -10,6 +10,7 @@ import http.server
 import json
 import socketserver
 import sys
+import time
 import urllib.parse
 import uuid
 from datetime import datetime
@@ -146,6 +147,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             client = self._client()
             user = client.find_user_by_password(password)
             if not user:
+                # No account lockout/CAPTCHA yet (see BACKLOG/chat) - this
+                # delay is a cheap, stateless speed bump against naive
+                # scripted brute-forcing, not real rate limiting.
+                time.sleep(1)
                 return self._send_json(401, {"error": "Falsches Passwort"})
             self._send_json(200, user)
         except CloudKitError as e:

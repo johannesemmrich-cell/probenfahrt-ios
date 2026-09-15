@@ -41,4 +41,9 @@ protocol UserRepository {
     /// Admin-assigned password for the web check-in login (mediproben.com,
     /// see MemberDetailView) - pass nil/empty to clear it.
     func setWebPassword(_ password: String?, for id: UUID) async throws
+    /// Web login (mediproben.com) has no group context to scope by - it's a
+    /// single global password lookup - so uniqueness must be checked across
+    /// every user in the container, not just one group, or two different
+    /// teams' admins could still collide.
+    func isWebPasswordTaken(_ password: String, excluding userID: UUID) async throws -> Bool
 }

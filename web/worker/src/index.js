@@ -170,9 +170,25 @@ async function saveReport(env, recordName, fields, exists) {
   return result;
 }
 
+/**
+ * The lab team is in Germany, so "today" must be the Berlin calendar day,
+ * not the Worker runtime's UTC day - naively using getUTCFullYear/Month/Date
+ * shifts the date for 1-2 hours around midnight (depending on DST) and can
+ * make a check-in overwrite yesterday's report instead of creating today's.
+ * Intl.DateTimeFormat resolves the correct Berlin Y/M/D (DST-aware) without
+ * manual offset math, then Date.UTC anchors it at UTC midnight so
+ * toISOString().slice(0,10) reliably reproduces that same Y-M-D string -
+ * matching CloudKitQuerying.localDayString's format on the app side.
+ */
 function todayLocal() {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Berlin",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const lookup = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return new Date(Date.UTC(Number(lookup.year), Number(lookup.month) - 1, Number(lookup.day)));
 }
 
 function jsonResponse(status, payload) {
@@ -244,11 +260,21 @@ async function handlePostLogin(request, env) {
 
   try {
     const user = await findUserByPassword(env, password);
-    if (!user) return jsonResponse(401, { error: "Falsches Passwort" });
+    if (!user) {
+      // No account lockout/CAPTCHA yet (see BACKLOG/chat) - this delay is a
+      // cheap, stateless speed bump against naive scripted brute-forcing,
+      // not real rate limiting.
+      await sleep(1000);
+      return jsonResponse(401, { error: "Falsches Passwort" });
+    }
     return jsonResponse(200, user);
   } catch (error) {
     return jsonResponse(502, { error: String(error), detail: error.detail });
   }
+}
+
+function sleep(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 export default {

@@ -159,6 +159,15 @@ final class CloudKitUserRepository: UserRepository {
         _ = try await database.save(record)
     }
 
+    func isWebPasswordTaken(_ password: String, excluding userID: UUID) async throws -> Bool {
+        let predicate = NSPredicate(format: "%K == %@", UserField.webPassword, password)
+        let query = CKQuery(recordType: RecordType.user, predicate: predicate)
+        let records = try await allRecords(matching: query)
+        return records.contains { record in
+            (record[UserField.userID] as? String).flatMap(UUID.init) != userID
+        }
+    }
+
     func deleteUser(id: UUID, bypassLastAdminGuard: Bool = false) async throws {
         guard let user = try await user(id: id) else { return }
         if !bypassLastAdminGuard, let groupID = user.groupID {

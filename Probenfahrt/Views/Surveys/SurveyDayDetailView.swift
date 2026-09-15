@@ -10,7 +10,7 @@ struct SurveyDayDetailView: View {
 
     @State private var day: SurveyDay
     @State private var entries: [SurveyEntry]
-    @State private var lockErrorMessage: String?
+    @State private var errorMessage: String?
 
     private let surveyRepository: SurveyRepository = CloudKitSurveyRepository()
 
@@ -91,13 +91,13 @@ struct SurveyDayDetailView: View {
         }
         .navigationTitle(day.date.formatted(.dateTime.weekday(.wide).day().month().locale(.app)))
         .navigationBarTitleDisplayMode(.inline)
-        .alert("Sperren fehlgeschlagen", isPresented: Binding(
-            get: { lockErrorMessage != nil },
-            set: { if !$0 { lockErrorMessage = nil } }
+        .alert("Fehler", isPresented: Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
         )) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text(lockErrorMessage ?? "")
+            Text(errorMessage ?? "")
         }
     }
 
@@ -110,8 +110,15 @@ struct SurveyDayDetailView: View {
             }
             entries = try await surveyRepository.entries(forDayID: day.id)
             onRowChanged(SurveyDayRow(day: day, entries: entries))
+        } catch SurveyRepositoryError.dayLocked {
+            // Another admin locked the day after this screen loaded, so the
+            // row wasn't disabled yet — resync the local lock state so it
+            // is now, instead of leaving the tap looking like a no-op.
+            day.isLocked = true
+            onRowChanged(SurveyDayRow(day: day, entries: entries))
+            errorMessage = "Dieser Tag wurde inzwischen von einem anderen Admin gesperrt. Ein-/Austragen ist nicht mehr möglich."
         } catch {
-            // Transient failure — reopening the screen resyncs.
+            errorMessage = "Die Änderung konnte nicht gespeichert werden.\n\nFehlerdetails: \(error)"
         }
     }
 
@@ -124,7 +131,7 @@ struct SurveyDayDetailView: View {
             day.lockReason = newReason
             onRowChanged(SurveyDayRow(day: day, entries: entries))
         } catch {
-            lockErrorMessage = "Die Änderung konnte nicht gespeichert werden.\n\nFehlerdetails: \(error)"
+            errorMessage = "Die Änderung konnte nicht gespeichert werden.\n\nFehlerdetails: \(error)"
         }
     }
 }
