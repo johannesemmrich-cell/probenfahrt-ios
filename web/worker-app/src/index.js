@@ -168,6 +168,11 @@ function isAdminSession(session) {
   return session.role === "admin" || session.role === "viceAdmin";
 }
 
+/** Strikter als isAdminSession (schließt viceAdmin aus) - Pendant zu isFullAdmin in EffectiveAdmin.swift. */
+function isFullAdminSession(session) {
+  return session.role === "admin";
+}
+
 async function attachRefreshedSession(response, env, session) {
   const cookie = await createSessionCookie(env, {
     id: session.uid,
@@ -368,7 +373,353 @@ async function findUsersForGroup(env, groupID) {
     id: r.fields.userID.value,
     name: r.fields.name ? r.fields.name.value : "",
     abbreviation: r.fields.abbreviation ? r.fields.abbreviation.value : "",
+    role: r.fields.role ? r.fields.role.value : "member",
+    accountKind: r.fields.accountKind ? r.fields.accountKind.value : "labTeam",
   }));
+}
+
+// MARK: - Profil (eigenes) + Mitglieder verwalten (User-Record-CRUD, siehe
+// SettingsView.swift/TeamMembersView.swift/MemberDetailView.swift)
+
+async function findUserRecordByUserID(env, groupID, userID) {
+  const body = {
+    query: {
+      recordType: "User",
+      filterBy: [
+        { fieldName: "userID", comparator: "EQUALS", fieldValue: { value: userID, type: "STRING" } },
+      ],
+    },
+  };
+  const records = await queryAllRecords(env, body);
+  const record = records.find((r) => r.fields.groupID && r.fields.groupID.value === groupID);
+  if (!record) return null;
+  return {
+    recordName: record.recordName,
+    id: record.fields.userID.value,
+    name: record.fields.name ? record.fields.name.value : "",
+    abbreviation: record.fields.abbreviation ? record.fields.abbreviation.value : "",
+    role: record.fields.role ? record.fields.role.value : "member",
+    accountKind: record.fields.accountKind ? record.fields.accountKind.value : "labTeam",
+    groupID: record.fields.groupID ? record.fields.groupID.value : null,
+    createdAt: record.fields.createdAt ? record.fields.createdAt.value : Date.now(),
+    webPasswordEncrypted: (record.fields.webPasswordEncrypted && record.fields.webPasswordEncrypted.value) || null,
+  };
+}
+
+async function isAbbreviationTakenInGroup(env, groupID, abbreviation, excludingUserID) {
+  const normalized = abbreviation.trim().toLowerCase();
+  const users = await findUsersForGroup(env, groupID);
+  return users.some((u) => u.id !== excludingUserID && u.abbreviation.toLowerCase() === normalized);
+}
+
+/**
+ * Volles Feld-Set statt nur der geänderten Felder, siehe
+ * handlePostSurveyDayLock für die Begründung. webPasswordEncrypted wird
+ * IMMER mitgeschickt (leerer String statt Weglassen bei "kein Passwort") -
+ * unklar/ungetestet, ob forceUpdate ein weggelassenes Feld unverändert lässt
+ * oder löscht, das hier umgeht die Frage.
+ */
+async function saveUserRecord(env, record) {
+  const fields = {
+    userID: { value: record.id, type: "STRING" },
+    name: { value: record.name, type: "STRING" },
+    abbreviation: { value: record.abbreviation, type: "STRING" },
+    role: { value: record.role, type: "STRING" },
+    accountKind: { value: record.accountKind, type: "STRING" },
+    groupID: { value: record.groupID, type: "STRING" },
+    createdAt: { value: record.createdAt, type: "TIMESTAMP" },
+    webPasswordEncrypted: { value: record.webPasswordEncrypted || "", type: "STRING" },
+  };
+  await signAndPost(env, databasePath(env, "records/modify"), {
+    operations: [{ operationType: "forceUpdate", record: { recordName: record.recordName, recordType: "User", fields } }],
+  });
+}
+
+async function handlePutProfile(request, env) {
+  const session = await verifySession(request, env);
+  if (!session) return jsonResponse(401, { error: "Nicht angemeldet" });
+
+  let name, abbreviation;
+  try {
+    const payload = await request.json();
+    name = (payload.name || "").trim();
+    abbreviation = (payload.abbreviation || "").trim();
+    if (!name) throw new Error("Name fehlt");
+  } catch {
+    return jsonResponse(400, { error: "Name darf nicht leer sein." });
+  }
+
+  try {
+    const record = await findUserRecordByUserID(env, session.gid, session.uid);
+    if (!record) return jsonResponse(404, { error: "Nutzer nicht gefunden" });
+
+    const canEditAbbreviation = isFullAdminSession(session);
+    let nextAbbreviation = record.abbreviation;
+    if (canEditAbbreviation && abbreviation && abbreviation.toLowerCase() !== record.abbreviation.toLowerCase()) {
+      if (await isAbbreviationTakenInGroup(env, session.gid, abbreviation, session.uid)) {
+        return jsonResponse(409, { error: "Dieses Kürzel ist schon vergeben." });
+      }
+      nextAbbreviation = abbreviation;
+    }
+
+    await saveUserRecord(env, { ...record, name, abbreviation: nextAbbreviation });
+
+    const response = jsonResponse(200, { name, abbreviation: nextAbbreviation });
+    return attachRefreshedSession(response, env, { ...session, name, abbr: nextAbbreviation });
+  } catch (error) {
+    return jsonResponse(502, { error: String(error), detail: error.detail });
+  }
+}
+
+async function findAllEntriesForUser(env, groupID, userID) {
+  // userID ist bei SurveyEntry NICHT Queryable (nur surveyDayID/groupID,
+  // siehe README) - deshalb alle Einträge der Gruppe holen und hier filtern,
+  // gleiches Muster wie findSurveyEntriesForDayIDs.
+  const body = {
+    query: {
+      recordType: "SurveyEntry",
+      filterBy: [
+        { fieldName: "groupID", comparator: "EQUALS", fieldValue: { value: groupID, type: "STRING" } },
+      ],
+    },
+  };
+  const records = await queryAllRecords(env, body);
+  return records
+    .filter((r) => r.fields.userID && r.fields.userID.value === userID)
+    .map((r) => ({ dayID: r.fields.surveyDayID.value }));
+}
+
+async function findAllSurveyDaysForGroup(env, groupID) {
+  const body = {
+    query: {
+      recordType: "SurveyDay",
+      filterBy: [
+        { fieldName: "groupID", comparator: "EQUALS", fieldValue: { value: groupID, type: "STRING" } },
+      ],
+    },
+  };
+  const records = await queryAllRecords(env, body);
+  return records.map((r) => ({ id: r.fields.dayID.value, date: berlinDateString(r.fields.date.value) }));
+}
+
+/** Montag-Sonntag, [start, end) - Pendant zu Calendar.dateInterval(of: .weekOfYear) mit Montag als Wochenstart. */
+function weekIntervalContaining(dateString) {
+  const [y, m, d] = dateString.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  const daysSinceMonday = (date.getUTCDay() + 6) % 7; // Mo->0 ... So->6
+  const start = new Date(date);
+  start.setUTCDate(start.getUTCDate() - daysSinceMonday);
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 7);
+  const iso = (dt) => dt.toISOString().slice(0, 10);
+  return { start: iso(start), end: iso(end) };
+}
+
+/** [start, end) für den Kalendermonat, in dem dateString liegt. */
+function monthIntervalContaining(dateString) {
+  const [y, m] = dateString.split("-").map(Number);
+  const start = `${y}-${pad2(m)}-01`;
+  const nextY = m === 12 ? y + 1 : y;
+  const nextM = m === 12 ? 1 : m + 1;
+  return { start, end: `${nextY}-${pad2(nextM)}-01` };
+}
+
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+async function handleGetMembers(request, env) {
+  const session = await verifySession(request, env);
+  if (!session) return jsonResponse(401, { error: "Nicht angemeldet" });
+  if (!isAdminSession(session)) return jsonResponse(403, { error: "Nur für Admins" });
+
+  try {
+    const users = await findUsersForGroup(env, session.gid);
+    // Wie TeamMembersView.swift: Apotheken-Accounts tauchen hier nicht auf,
+    // keine Sortierung (native App sortiert hier auch nicht).
+    const members = users.filter((u) => u.accountKind === "labTeam");
+    const response = jsonResponse(200, { members });
+    return attachRefreshedSession(response, env, session);
+  } catch (error) {
+    return jsonResponse(502, { error: String(error), detail: error.detail });
+  }
+}
+
+async function handleGetMemberDetail(request, env, memberID) {
+  const session = await verifySession(request, env);
+  if (!session) return jsonResponse(401, { error: "Nicht angemeldet" });
+  if (!isAdminSession(session)) return jsonResponse(403, { error: "Nur für Admins" });
+
+  try {
+    const record = await findUserRecordByUserID(env, session.gid, memberID);
+    if (!record) return jsonResponse(404, { error: "Mitglied nicht gefunden" });
+
+    const entries = await findAllEntriesForUser(env, session.gid, memberID);
+    const payload = {
+      id: record.id,
+      name: record.name,
+      abbreviation: record.abbreviation,
+      role: record.role,
+      totalTrips: entries.length,
+      isFullAdminViewing: isFullAdminSession(session),
+    };
+    // Web-Zugang-Passwort nur für Haupt-Admins sichtbar, wie MemberDetailView.
+    if (isFullAdminSession(session)) {
+      payload.webPassword = record.webPasswordEncrypted ? await decryptWebPassword(env, record.webPasswordEncrypted) : "";
+    }
+    const response = jsonResponse(200, payload);
+    return attachRefreshedSession(response, env, session);
+  } catch (error) {
+    return jsonResponse(502, { error: String(error), detail: error.detail });
+  }
+}
+
+async function handleGetMemberStats(request, env, memberID) {
+  const session = await verifySession(request, env);
+  if (!session) return jsonResponse(401, { error: "Nicht angemeldet" });
+  if (!isAdminSession(session)) return jsonResponse(403, { error: "Nur für Admins" });
+
+  const url = new URL(request.url);
+  const period = url.searchParams.get("period") === "month" ? "month" : "week";
+  const dateParam = url.searchParams.get("date");
+  const dateString = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : berlinDateString(Date.now());
+
+  try {
+    const interval = period === "month" ? monthIntervalContaining(dateString) : weekIntervalContaining(dateString);
+    const [entries, days] = await Promise.all([
+      findAllEntriesForUser(env, session.gid, memberID),
+      findAllSurveyDaysForGroup(env, session.gid),
+    ]);
+    const dateByDayID = Object.fromEntries(days.map((d) => [d.id, d.date]));
+    const tripCount = entries.filter((e) => {
+      const date = dateByDayID[e.dayID];
+      return date && date >= interval.start && date < interval.end;
+    }).length;
+    const response = jsonResponse(200, { tripCount, periodStart: interval.start, periodEnd: interval.end });
+    return attachRefreshedSession(response, env, session);
+  } catch (error) {
+    return jsonResponse(502, { error: String(error), detail: error.detail });
+  }
+}
+
+async function handlePutMember(request, env, memberID) {
+  const session = await verifySession(request, env);
+  if (!session) return jsonResponse(401, { error: "Nicht angemeldet" });
+  if (!isFullAdminSession(session)) return jsonResponse(403, { error: "Nur für Haupt-Admins" });
+
+  let abbreviation;
+  try {
+    const payload = await request.json();
+    abbreviation = (payload.abbreviation || "").trim();
+    if (!abbreviation) throw new Error("Kürzel fehlt");
+  } catch {
+    return jsonResponse(400, { error: "Kürzel darf nicht leer sein." });
+  }
+
+  try {
+    const record = await findUserRecordByUserID(env, session.gid, memberID);
+    if (!record) return jsonResponse(404, { error: "Mitglied nicht gefunden" });
+
+    if (abbreviation.toLowerCase() !== record.abbreviation.toLowerCase()) {
+      if (await isAbbreviationTakenInGroup(env, session.gid, abbreviation, memberID)) {
+        return jsonResponse(409, { error: "Dieses Kürzel ist schon vergeben." });
+      }
+    }
+    await saveUserRecord(env, { ...record, abbreviation });
+    const response = jsonResponse(200, { abbreviation });
+    return attachRefreshedSession(response, env, session);
+  } catch (error) {
+    return jsonResponse(502, { error: String(error), detail: error.detail });
+  }
+}
+
+async function handlePutMemberWebPassword(request, env, memberID) {
+  const session = await verifySession(request, env);
+  if (!session) return jsonResponse(401, { error: "Nicht angemeldet" });
+  if (!isFullAdminSession(session)) return jsonResponse(403, { error: "Nur für Haupt-Admins" });
+
+  let password;
+  try {
+    const payload = await request.json();
+    password = (payload.password || "").trim();
+  } catch {
+    return jsonResponse(400, { error: "Ungültige Anfrage" });
+  }
+
+  try {
+    const record = await findUserRecordByUserID(env, session.gid, memberID);
+    if (!record) return jsonResponse(404, { error: "Mitglied nicht gefunden" });
+
+    let encrypted = null;
+    if (password) {
+      encrypted = await encryptWebPassword(env, password);
+      const existing = await findUserByEncryptedPassword(env, encrypted);
+      if (existing && existing.id !== memberID) {
+        return jsonResponse(409, { error: "Dieses Passwort ist schon einem anderen Mitglied zugewiesen." });
+      }
+    }
+    await saveUserRecord(env, { ...record, webPasswordEncrypted: encrypted });
+    const response = jsonResponse(200, { ok: true });
+    return attachRefreshedSession(response, env, session);
+  } catch (error) {
+    return jsonResponse(502, { error: String(error), detail: error.detail });
+  }
+}
+
+async function handlePutMemberRole(request, env, memberID) {
+  const session = await verifySession(request, env);
+  if (!session) return jsonResponse(401, { error: "Nicht angemeldet" });
+  if (!isFullAdminSession(session)) return jsonResponse(403, { error: "Nur für Haupt-Admins" });
+  if (memberID === session.uid) return jsonResponse(403, { error: "Eigene Rolle kann nicht geändert werden." });
+
+  let role;
+  try {
+    const payload = await request.json();
+    role = payload.role;
+    if (role !== "member" && role !== "viceAdmin") throw new Error("invalid role");
+  } catch {
+    return jsonResponse(400, { error: "Ungültige Rolle" });
+  }
+
+  try {
+    const record = await findUserRecordByUserID(env, session.gid, memberID);
+    if (!record) return jsonResponse(404, { error: "Mitglied nicht gefunden" });
+    // Haupt-Admin-Ernennung/-Entzug bleibt bewusst App-only (dort auch nur
+    // über den Entwicklermodus möglich) - hier nicht nachgebildet.
+    if (record.role === "admin") return jsonResponse(403, { error: "Haupt-Admin-Rolle kann hier nicht geändert werden." });
+
+    await saveUserRecord(env, { ...record, role });
+    const response = jsonResponse(200, { role });
+    return attachRefreshedSession(response, env, session);
+  } catch (error) {
+    return jsonResponse(502, { error: String(error), detail: error.detail });
+  }
+}
+
+async function handleDeleteMember(request, env, memberID) {
+  const session = await verifySession(request, env);
+  if (!session) return jsonResponse(401, { error: "Nicht angemeldet" });
+  if (!isFullAdminSession(session)) return jsonResponse(403, { error: "Nur für Haupt-Admins" });
+  if (memberID === session.uid) return jsonResponse(403, { error: "Eigenes Konto kann nicht entfernt werden." });
+
+  try {
+    const record = await findUserRecordByUserID(env, session.gid, memberID);
+    if (!record) return jsonResponse(404, { error: "Mitglied nicht gefunden" });
+
+    if (record.role === "admin") {
+      const users = await findUsersForGroup(env, session.gid);
+      const adminCount = users.filter((u) => u.role === "admin").length;
+      if (adminCount <= 1) return jsonResponse(409, { error: "Das letzte Admin-Konto der Gruppe kann nicht entfernt werden." });
+    }
+
+    await signAndPost(env, databasePath(env, "records/modify"), {
+      operations: [{ operationType: "forceDelete", record: { recordName: record.recordName } }],
+    });
+    const response = jsonResponse(200, { ok: true });
+    return attachRefreshedSession(response, env, session);
+  } catch (error) {
+    return jsonResponse(502, { error: String(error), detail: error.detail });
+  }
 }
 
 async function handleGetSurveyDays(request, env) {
@@ -427,6 +778,7 @@ async function findLocationsForGroup(env, groupID) {
     id: r.fields.locationID.value,
     name: r.fields.name.value,
     address: r.fields.address ? r.fields.address.value : "",
+    usesQRCheckIn: r.fields.usesQRCheckIn ? r.fields.usesQRCheckIn.value !== 0 : true,
   }));
 }
 
@@ -482,6 +834,202 @@ async function handleGetSamples(request, env) {
       .sort((a, b) => a.name.localeCompare(b.name, "de"));
 
     const response = jsonResponse(200, { date: dateString, items });
+    return attachRefreshedSession(response, env, session);
+  } catch (error) {
+    return jsonResponse(502, { error: String(error), detail: error.detail });
+  }
+}
+
+// MARK: - Apotheken verwalten (SampleLocation-CRUD + manuelles Melden,
+// siehe PharmacyManagementView.swift/PharmacyDetailView) - admin-only,
+// paralleler Weg zum tokenbasierten /api/report auf dem Apotheken-Worker.
+
+function reportRecordName(locationId, dateString) {
+  return `report-${locationId}-${dateString}`;
+}
+
+async function findLocationRecordByID(env, groupID, locationID) {
+  const body = {
+    query: {
+      recordType: "SampleLocation",
+      filterBy: [
+        { fieldName: "groupID", comparator: "EQUALS", fieldValue: { value: groupID, type: "STRING" } },
+        { fieldName: "locationID", comparator: "EQUALS", fieldValue: { value: locationID, type: "STRING" } },
+      ],
+    },
+  };
+  const records = await queryAllRecords(env, body);
+  if (!records.length) return null;
+  const record = records[0];
+  return {
+    recordName: record.recordName,
+    id: record.fields.locationID.value,
+    groupID: record.fields.groupID ? record.fields.groupID.value : null,
+    name: record.fields.name.value,
+    address: record.fields.address ? record.fields.address.value : "",
+    ownerUserID: record.fields.ownerUserID ? record.fields.ownerUserID.value : null,
+    token: record.fields.token ? record.fields.token.value : "",
+    usesQRCheckIn: record.fields.usesQRCheckIn ? record.fields.usesQRCheckIn.value !== 0 : true,
+  };
+}
+
+async function getSampleReport(env, recordName) {
+  const result = await signAndPost(env, databasePath(env, "records/lookup"), { records: [{ recordName }] });
+  const records = result.records || [];
+  if (!records.length || !records[0].fields) return null;
+  return { hasSamples: records[0].fields.hasSamples.value === 1 };
+}
+
+async function saveSampleReport(env, recordName, groupID, locationID, hasSamples, dayMs, exists) {
+  const fields = {
+    reportID: { value: crypto.randomUUID(), type: "STRING" },
+    locationID: { value: locationID, type: "STRING" },
+    day: { value: dayMs, type: "TIMESTAMP" },
+    hasSamples: { value: hasSamples ? 1 : 0, type: "INT64" },
+    statusNote: { value: "", type: "STRING" },
+    reportedAt: { value: Date.now(), type: "TIMESTAMP" },
+  };
+  if (groupID) fields.groupID = { value: groupID, type: "STRING" };
+  await signAndPost(env, databasePath(env, "records/modify"), {
+    operations: [{ operationType: exists ? "forceUpdate" : "create", record: { recordName, recordType: "SampleReport", fields } }],
+  });
+}
+
+async function handleGetPharmacies(request, env) {
+  const session = await verifySession(request, env);
+  if (!session) return jsonResponse(401, { error: "Nicht angemeldet" });
+  if (!isAdminSession(session)) return jsonResponse(403, { error: "Nur für Admins" });
+
+  try {
+    const today = berlinDateString(Date.now());
+    const dayMs = berlinMidnightMs(today);
+    const [locations, reports] = await Promise.all([
+      findLocationsForGroup(env, session.gid),
+      findSampleReportsForDay(env, session.gid, dayMs),
+    ]);
+    const reportByLocation = Object.fromEntries(reports.map((r) => [r.locationID, r]));
+    const pharmacies = locations
+      .map((l) => ({
+        id: l.id,
+        name: l.name,
+        address: l.address,
+        usesQRCheckIn: l.usesQRCheckIn,
+        hasSamples: reportByLocation[l.id] ? reportByLocation[l.id].hasSamples : null,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name, "de"));
+    const response = jsonResponse(200, { pharmacies });
+    return attachRefreshedSession(response, env, session);
+  } catch (error) {
+    return jsonResponse(502, { error: String(error), detail: error.detail });
+  }
+}
+
+async function handleGetPharmacyDetail(request, env, pharmacyID) {
+  const session = await verifySession(request, env);
+  if (!session) return jsonResponse(401, { error: "Nicht angemeldet" });
+  if (!isAdminSession(session)) return jsonResponse(403, { error: "Nur für Admins" });
+
+  try {
+    const location = await findLocationRecordByID(env, session.gid, pharmacyID);
+    if (!location) return jsonResponse(404, { error: "Apotheke nicht gefunden" });
+
+    const today = berlinDateString(Date.now());
+    const report = await getSampleReport(env, reportRecordName(location.id, today));
+
+    const response = jsonResponse(200, {
+      id: location.id,
+      name: location.name,
+      address: location.address,
+      usesQRCheckIn: location.usesQRCheckIn,
+      checkInURL: `https://mediproben.com?token=${location.token}`,
+      hasSamples: report ? report.hasSamples : null,
+    });
+    return attachRefreshedSession(response, env, session);
+  } catch (error) {
+    return jsonResponse(502, { error: String(error), detail: error.detail });
+  }
+}
+
+async function handlePostPharmacy(request, env) {
+  const session = await verifySession(request, env);
+  if (!session) return jsonResponse(401, { error: "Nicht angemeldet" });
+  if (!isAdminSession(session)) return jsonResponse(403, { error: "Nur für Admins" });
+
+  let name, address, usesQRCheckIn;
+  try {
+    const payload = await request.json();
+    name = (payload.name || "").trim();
+    address = (payload.address || "").trim();
+    usesQRCheckIn = payload.usesQRCheckIn !== false;
+    if (!name) throw new Error("Name fehlt");
+  } catch {
+    return jsonResponse(400, { error: "Name darf nicht leer sein." });
+  }
+
+  try {
+    const locationID = crypto.randomUUID();
+    const recordName = `location-${locationID}`;
+    const fields = {
+      locationID: { value: locationID, type: "STRING" },
+      groupID: { value: session.gid, type: "STRING" },
+      name: { value: name, type: "STRING" },
+      address: { value: address, type: "STRING" },
+      token: { value: crypto.randomUUID(), type: "STRING" },
+      usesQRCheckIn: { value: usesQRCheckIn ? 1 : 0, type: "INT64" },
+    };
+    await signAndPost(env, databasePath(env, "records/modify"), {
+      operations: [{ operationType: "create", record: { recordName, recordType: "SampleLocation", fields } }],
+    });
+    const response = jsonResponse(200, { id: locationID, name, address, usesQRCheckIn });
+    return attachRefreshedSession(response, env, session);
+  } catch (error) {
+    return jsonResponse(502, { error: String(error), detail: error.detail });
+  }
+}
+
+async function handlePostPharmacyReport(request, env, pharmacyID) {
+  const session = await verifySession(request, env);
+  if (!session) return jsonResponse(401, { error: "Nicht angemeldet" });
+  if (!isAdminSession(session)) return jsonResponse(403, { error: "Nur für Admins" });
+
+  let hasSamples;
+  try {
+    const payload = await request.json();
+    hasSamples = Boolean(payload.hasSamples);
+  } catch {
+    return jsonResponse(400, { error: "Ungültige Anfrage" });
+  }
+
+  try {
+    const location = await findLocationRecordByID(env, session.gid, pharmacyID);
+    if (!location) return jsonResponse(404, { error: "Apotheke nicht gefunden" });
+
+    const today = berlinDateString(Date.now());
+    const dayMs = berlinMidnightMs(today);
+    const recordName = reportRecordName(location.id, today);
+    const existing = await getSampleReport(env, recordName);
+    await saveSampleReport(env, recordName, session.gid, location.id, hasSamples, dayMs, existing !== null);
+
+    const response = jsonResponse(200, { ok: true, hasSamples });
+    return attachRefreshedSession(response, env, session);
+  } catch (error) {
+    return jsonResponse(502, { error: String(error), detail: error.detail });
+  }
+}
+
+async function handleDeletePharmacy(request, env, pharmacyID) {
+  const session = await verifySession(request, env);
+  if (!session) return jsonResponse(401, { error: "Nicht angemeldet" });
+  if (!isAdminSession(session)) return jsonResponse(403, { error: "Nur für Admins" });
+
+  try {
+    const location = await findLocationRecordByID(env, session.gid, pharmacyID);
+    if (!location) return jsonResponse(404, { error: "Apotheke nicht gefunden" });
+
+    await signAndPost(env, databasePath(env, "records/modify"), {
+      operations: [{ operationType: "forceDelete", record: { recordName: location.recordName } }],
+    });
+    const response = jsonResponse(200, { ok: true });
     return attachRefreshedSession(response, env, session);
   } catch (error) {
     return jsonResponse(502, { error: String(error), detail: error.detail });
@@ -814,6 +1362,51 @@ export default {
     const lockMatch = url.pathname.match(/^\/api\/survey-days\/([^/]+)\/lock$/);
     if (request.method === "POST" && lockMatch) {
       return handlePostSurveyDayLock(request, env, decodeURIComponent(lockMatch[1]));
+    }
+    if (request.method === "PUT" && url.pathname === "/api/profile") {
+      return handlePutProfile(request, env);
+    }
+    if (request.method === "GET" && url.pathname === "/api/members") {
+      return handleGetMembers(request, env);
+    }
+    const memberStatsMatch = url.pathname.match(/^\/api\/members\/([^/]+)\/stats$/);
+    if (request.method === "GET" && memberStatsMatch) {
+      return handleGetMemberStats(request, env, decodeURIComponent(memberStatsMatch[1]));
+    }
+    const memberPasswordMatch = url.pathname.match(/^\/api\/members\/([^/]+)\/web-password$/);
+    if (request.method === "PUT" && memberPasswordMatch) {
+      return handlePutMemberWebPassword(request, env, decodeURIComponent(memberPasswordMatch[1]));
+    }
+    const memberRoleMatch = url.pathname.match(/^\/api\/members\/([^/]+)\/role$/);
+    if (request.method === "PUT" && memberRoleMatch) {
+      return handlePutMemberRole(request, env, decodeURIComponent(memberRoleMatch[1]));
+    }
+    const memberMatch = url.pathname.match(/^\/api\/members\/([^/]+)$/);
+    if (request.method === "GET" && memberMatch) {
+      return handleGetMemberDetail(request, env, decodeURIComponent(memberMatch[1]));
+    }
+    if (request.method === "PUT" && memberMatch) {
+      return handlePutMember(request, env, decodeURIComponent(memberMatch[1]));
+    }
+    if (request.method === "DELETE" && memberMatch) {
+      return handleDeleteMember(request, env, decodeURIComponent(memberMatch[1]));
+    }
+    if (request.method === "GET" && url.pathname === "/api/pharmacies") {
+      return handleGetPharmacies(request, env);
+    }
+    if (request.method === "POST" && url.pathname === "/api/pharmacies") {
+      return handlePostPharmacy(request, env);
+    }
+    const pharmacyReportMatch = url.pathname.match(/^\/api\/pharmacies\/([^/]+)\/report$/);
+    if (request.method === "POST" && pharmacyReportMatch) {
+      return handlePostPharmacyReport(request, env, decodeURIComponent(pharmacyReportMatch[1]));
+    }
+    const pharmacyMatch = url.pathname.match(/^\/api\/pharmacies\/([^/]+)$/);
+    if (request.method === "GET" && pharmacyMatch) {
+      return handleGetPharmacyDetail(request, env, decodeURIComponent(pharmacyMatch[1]));
+    }
+    if (request.method === "DELETE" && pharmacyMatch) {
+      return handleDeletePharmacy(request, env, decodeURIComponent(pharmacyMatch[1]));
     }
     // Alles andere (/, /index.html, ...) wird schon automatisch von den
     // Workers Static Assets aus public/ ausgeliefert, bevor dieser Fetch-

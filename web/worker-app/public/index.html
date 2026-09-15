@@ -24,7 +24,7 @@
     .muted { color: #8e8e93; }
     button.secondary, button.tab { background: #2c2c2e; color: #f2f2f7; border-color: #3a3a3c; }
     button.tab.active { background: #34c759; color: #fff; }
-    input[type="password"] { background: #1c1c1e; color: #f2f2f7; border-color: #3a3a3c; }
+    input[type="password"], input[type="text"] { background: #1c1c1e; color: #f2f2f7; border-color: #3a3a3c; }
     .row { border-color: #3a3a3c; }
   }
   .card {
@@ -55,7 +55,7 @@
   button.primary { background: #34c759; color: #fff; }
   button.secondary { background: #f2f2f7; color: #1c1c1e; border: 1px solid #d1d1d6; }
   button.icon { padding: 8px 14px; }
-  input[type="password"] {
+  input[type="password"], input[type="text"] {
     display: block;
     width: 100%;
     padding: 14px;
@@ -65,6 +65,10 @@
     margin-bottom: 12px;
     box-sizing: border-box;
   }
+  .field-label { display: block; font-size: 0.8rem; color: #6e6e73; margin-bottom: 4px; }
+  label:has(input[type="checkbox"]) { display: block; margin-bottom: 12px; }
+  h3 { font-size: 1rem; margin: 20px 0 8px; }
+  h3:first-child { margin-top: 0; }
   .error { color: #ff3b30; font-size: 0.95rem; }
   .brand { font-size: 0.75rem; color: #a1a1a6; margin-top: 28px; text-align: center; }
   .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
@@ -106,6 +110,9 @@
   let surveyMonth = null; // { year, month } - month ist 1-12
   let samplesDate = null; // "YYYY-MM-DD"
   let adminMonth = null; // { year, month }
+  let settingsView = "root"; // "root" | "members" | "member" | "pharmacies" | "pharmacy"
+  let selectedMemberID = null;
+  let selectedPharmacyID = null;
 
   function render(html, appMode) {
     card.className = appMode ? "card app" : "card";
@@ -166,9 +173,9 @@
         '<button class="secondary icon" id="logoutBtn">Abmelden</button>' +
       '</div>' +
       '<div class="tabs">' +
-        '<button class="tab' + (activeTab === "survey" ? " active" : "") + '" data-tab="survey">Kalender &amp; Umfragen</button>' +
-        '<button class="tab' + (activeTab === "samples" ? " active" : "") + '" data-tab="samples">Proben-Status</button>' +
-        (me.isAdmin ? '<button class="tab' + (activeTab === "admin" ? " active" : "") + '" data-tab="admin">Admin</button>' : '') +
+        '<button class="tab' + (activeTab === "survey" ? " active" : "") + '" data-tab="survey">Umfragen</button>' +
+        '<button class="tab' + (activeTab === "samples" ? " active" : "") + '" data-tab="samples">Proben</button>' +
+        '<button class="tab' + (activeTab === "settings" ? " active" : "") + '" data-tab="settings">Einstellungen</button>' +
       '</div>' +
       '<div id="content">' + contentHtml + '</div>',
       true
@@ -179,7 +186,7 @@
         activeTab = btn.dataset.tab;
         if (activeTab === "survey") loadSurveyMonth(surveyMonth.year, surveyMonth.month);
         else if (activeTab === "samples") loadSamplesDay(samplesDate);
-        else renderAdminTab();
+        else { settingsView = "root"; loadSettingsRoot(); }
       });
     });
   }
@@ -340,19 +347,25 @@
     if (todayBtn) todayBtn.addEventListener("click", function () { loadSamplesDay(todayDateString()); });
   }
 
-  // MARK: - Admin-PDF-Auswertungen
+  // MARK: - Einstellungen (Profil + Admin: PDF-Export, Mitglieder, Apotheken)
 
-  function renderAdminTab() {
+  function loadSettingsRoot() {
+    settingsView = "root";
     if (!adminMonth) {
       const now = new Date();
       adminMonth = { year: now.getFullYear(), month: now.getMonth() + 1 };
     }
-    renderShell(adminTabHtml());
-    wireAdminNav();
+    renderShell(settingsRootHtml());
+    wireSettingsRoot();
   }
 
-  function adminTabHtml() {
-    return (
+  function settingsRootHtml() {
+    const abbreviationField = me.role === "admin"
+      ? '<input type="text" id="profileAbbreviation" value="' + escapeHtml(me.abbreviation) + '" />'
+      : '<p class="muted">' + escapeHtml(me.abbreviation) + ' (nur der Haupt-Admin kann das ändern)</p>';
+
+    const adminSection = me.isAdmin ? (
+      '<h3>Admin</h3>' +
       '<div class="nav">' +
         '<button class="secondary icon" id="prevAdminMonthBtn">&larr;</button>' +
         '<strong>' + MONTH_NAMES[adminMonth.month - 1] + " " + adminMonth.year + '</strong>' +
@@ -360,20 +373,35 @@
       '</div>' +
       '<button class="primary" id="downloadTripsBtn">Fahrten-Auswertung (PDF)</button>' +
       '<button class="secondary" id="downloadSamplesBtn">Proben-Auswertung (PDF)</button>' +
-      '<p class="error" id="adminError" style="display:none"></p>'
+      '<p class="error" id="adminError" style="display:none"></p>' +
+      '<button class="secondary" id="openMembersBtn">Mitglieder verwalten</button>' +
+      '<button class="secondary" id="openPharmaciesBtn">Apotheken verwalten</button>'
+    ) : "";
+
+    return (
+      '<h3>Profil</h3>' +
+      '<label class="field-label">Name</label>' +
+      '<input type="text" id="profileName" value="' + escapeHtml(me.name) + '" />' +
+      '<label class="field-label">Kürzel</label>' +
+      abbreviationField +
+      '<button class="primary" id="saveProfileBtn">Speichern</button>' +
+      '<p class="error" id="profileError" style="display:none"></p>' +
+      adminSection +
+      '<button class="secondary" id="logoutBtn2">Abmelden</button>'
     );
   }
 
-  function wireAdminNav() {
+  function wireSettingsRoot() {
+    document.getElementById("saveProfileBtn").addEventListener("click", saveProfile);
+    document.getElementById("logoutBtn2").addEventListener("click", logout);
+    if (!me.isAdmin) return;
     document.getElementById("prevAdminMonthBtn").addEventListener("click", function () {
       adminMonth = adminMonth.month === 1 ? { year: adminMonth.year - 1, month: 12 } : { year: adminMonth.year, month: adminMonth.month - 1 };
-      renderShell(adminTabHtml());
-      wireAdminNav();
+      loadSettingsRoot();
     });
     document.getElementById("nextAdminMonthBtn").addEventListener("click", function () {
       adminMonth = adminMonth.month === 12 ? { year: adminMonth.year + 1, month: 1 } : { year: adminMonth.year, month: adminMonth.month + 1 };
-      renderShell(adminTabHtml());
-      wireAdminNav();
+      loadSettingsRoot();
     });
     document.getElementById("downloadTripsBtn").addEventListener("click", function () {
       downloadReport(
@@ -393,6 +421,382 @@
         "Proben-Auswertung-" + adminMonth.year + "-" + pad2(adminMonth.month) + ".pdf"
       );
     });
+    document.getElementById("openMembersBtn").addEventListener("click", loadMembersList);
+    document.getElementById("openPharmaciesBtn").addEventListener("click", loadPharmaciesList);
+  }
+
+  async function saveProfile() {
+    const errorEl = document.getElementById("profileError");
+    errorEl.style.display = "none";
+    const name = document.getElementById("profileName").value.trim();
+    const abbreviationInput = document.getElementById("profileAbbreviation");
+    const abbreviation = abbreviationInput ? abbreviationInput.value.trim() : me.abbreviation;
+    try {
+      const response = await fetch("/api/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name, abbreviation: abbreviation })
+      });
+      if (response.status === 401) { renderLogin(); return; }
+      if (!response.ok) {
+        const data = await response.json().catch(function () { return {}; });
+        errorEl.textContent = data.error || "Konnte nicht gespeichert werden.";
+        errorEl.style.display = "block";
+        return;
+      }
+      const data = await response.json();
+      me.name = data.name;
+      me.abbreviation = data.abbreviation;
+      loadSettingsRoot();
+    } catch (e) {
+      errorEl.textContent = "Verbindung fehlgeschlagen.";
+      errorEl.style.display = "block";
+    }
+  }
+
+  function backToSettingsHtml(innerHtml) {
+    return '<button class="secondary icon" id="backToSettingsBtn">&larr; Einstellungen</button>' + innerHtml;
+  }
+
+  // MARK: - Mitglieder verwalten
+
+  async function loadMembersList() {
+    settingsView = "members";
+    renderShell('<p class="muted">Lade…</p>');
+    try {
+      const response = await fetch("/api/members");
+      if (response.status === 401) { renderLogin(); return; }
+      if (!response.ok) { renderShell(backToSettingsHtml('<p class="error">Konnte Mitglieder nicht laden.</p>')); return; }
+      const data = await response.json();
+      renderShell(membersListHtml(data.members));
+      wireMembersList();
+    } catch (e) {
+      renderShell(backToSettingsHtml('<p class="error">Verbindung fehlgeschlagen.</p>'));
+    }
+  }
+
+  function membersListHtml(members) {
+    const rows = members.length
+      ? members.map(function (m) {
+          const badge = m.role === "admin" ? " · Admin" : m.role === "viceAdmin" ? " · Vice-Admin" : "";
+          return '<div class="row member-row" data-id="' + escapeHtml(m.id) + '"><div>' + escapeHtml(m.name) + badge + '</div><div class="who">' + escapeHtml(m.abbreviation) + '</div></div>';
+        }).join("")
+      : '<p class="muted">Keine Teammitglieder.</p>';
+    return backToSettingsHtml('<h3>Mitglieder verwalten</h3>' + rows);
+  }
+
+  function wireMembersList() {
+    document.getElementById("backToSettingsBtn").addEventListener("click", loadSettingsRoot);
+    card.querySelectorAll(".member-row").forEach(function (row) {
+      row.style.cursor = "pointer";
+      row.addEventListener("click", function () { loadMemberDetail(row.dataset.id); });
+    });
+  }
+
+  async function loadMemberDetail(memberID) {
+    settingsView = "member";
+    selectedMemberID = memberID;
+    renderShell('<p class="muted">Lade…</p>');
+    try {
+      const [detailResponse, statsResponse] = await Promise.all([
+        fetch("/api/members/" + encodeURIComponent(memberID)),
+        fetch("/api/members/" + encodeURIComponent(memberID) + "/stats?period=week")
+      ]);
+      if (detailResponse.status === 401) { renderLogin(); return; }
+      if (!detailResponse.ok) { renderShell(backToMembersHtml('<p class="error">Konnte Mitglied nicht laden.</p>')); return; }
+      const detail = await detailResponse.json();
+      const stats = statsResponse.ok ? await statsResponse.json() : { tripCount: 0 };
+      renderShell(memberDetailHtml(detail, stats, "week"));
+      wireMemberDetail(detail);
+    } catch (e) {
+      renderShell(backToMembersHtml('<p class="error">Verbindung fehlgeschlagen.</p>'));
+    }
+  }
+
+  function backToMembersHtml(innerHtml) {
+    return '<button class="secondary icon" id="backToMembersBtn">&larr; Mitglieder</button>' + innerHtml;
+  }
+
+  function memberDetailHtml(detail, stats, period) {
+    const roleLabel = detail.role === "admin" ? "Haupt-Admin" : detail.role === "viceAdmin" ? "Vice-Admin" : "Mitglied";
+    const passwordSection = detail.isFullAdminViewing ? (
+      '<h3>Web-Zugang</h3>' +
+      '<input type="text" id="memberPasswordInput" value="' + escapeHtml(detail.webPassword || "") + '" placeholder="Passwort (leer = kein Zugang)" />' +
+      '<button class="secondary" id="saveMemberPasswordBtn">Passwort speichern</button>' +
+      '<p class="error" id="memberPasswordError" style="display:none"></p>'
+    ) : "";
+    const roleToggle = (detail.isFullAdminViewing && detail.id !== me.id && detail.role !== "admin") ? (
+      '<h3>Rolle</h3>' +
+      '<label><input type="checkbox" id="viceAdminToggle" ' + (detail.role === "viceAdmin" ? "checked" : "") + ' /> Vice-Admin</label>'
+    ) : "";
+    const removeButton = (detail.isFullAdminViewing && detail.id !== me.id) ? (
+      '<button class="secondary" id="removeMemberBtn" style="color:#ff3b30">Aus Gruppe entfernen</button>'
+    ) : "";
+
+    return backToMembersHtml(
+      '<h2>' + escapeHtml(detail.name) + '</h2>' +
+      '<p class="who">' + escapeHtml(detail.abbreviation) + ' · ' + roleLabel + '</p>' +
+      '<p class="muted">Fahrten insgesamt: ' + detail.totalTrips + '</p>' +
+      '<div class="nav">' +
+        '<button class="secondary icon" id="periodWeekBtn">Woche</button>' +
+        '<button class="secondary icon" id="periodMonthBtn">Monat</button>' +
+      '</div>' +
+      '<p id="periodTripCount">Fahrten diese Woche: ' + stats.tripCount + '</p>' +
+      passwordSection +
+      roleToggle +
+      removeButton +
+      '<p class="error" id="memberActionError" style="display:none"></p>'
+    );
+  }
+
+  function wireMemberDetail(detail) {
+    document.getElementById("backToMembersBtn").addEventListener("click", loadMembersList);
+    document.getElementById("periodWeekBtn").addEventListener("click", function () { refreshMemberStats(detail.id, "week"); });
+    document.getElementById("periodMonthBtn").addEventListener("click", function () { refreshMemberStats(detail.id, "month"); });
+
+    const savePasswordBtn = document.getElementById("saveMemberPasswordBtn");
+    if (savePasswordBtn) {
+      savePasswordBtn.addEventListener("click", async function () {
+        const errorEl = document.getElementById("memberPasswordError");
+        errorEl.style.display = "none";
+        const password = document.getElementById("memberPasswordInput").value.trim();
+        try {
+          const response = await fetch("/api/members/" + encodeURIComponent(detail.id) + "/web-password", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password: password })
+          });
+          if (response.status === 401) { renderLogin(); return; }
+          if (!response.ok) {
+            const data = await response.json().catch(function () { return {}; });
+            errorEl.textContent = data.error || "Konnte nicht gespeichert werden.";
+            errorEl.style.display = "block";
+          }
+        } catch (e) {
+          errorEl.textContent = "Verbindung fehlgeschlagen.";
+          errorEl.style.display = "block";
+        }
+      });
+    }
+
+    const viceAdminToggle = document.getElementById("viceAdminToggle");
+    if (viceAdminToggle) {
+      viceAdminToggle.addEventListener("change", async function () {
+        try {
+          const response = await fetch("/api/members/" + encodeURIComponent(detail.id) + "/role", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ role: viceAdminToggle.checked ? "viceAdmin" : "member" })
+          });
+          if (response.status === 401) { renderLogin(); return; }
+          if (!response.ok) {
+            const data = await response.json().catch(function () { return {}; });
+            alert(data.error || "Konnte nicht gespeichert werden.");
+            viceAdminToggle.checked = !viceAdminToggle.checked;
+          }
+        } catch (e) {
+          alert("Verbindung fehlgeschlagen.");
+          viceAdminToggle.checked = !viceAdminToggle.checked;
+        }
+      });
+    }
+
+    const removeBtn = document.getElementById("removeMemberBtn");
+    if (removeBtn) {
+      removeBtn.addEventListener("click", async function () {
+        if (!window.confirm(detail.name + " wirklich aus der Gruppe entfernen?")) return;
+        try {
+          const response = await fetch("/api/members/" + encodeURIComponent(detail.id), { method: "DELETE" });
+          if (response.status === 401) { renderLogin(); return; }
+          if (!response.ok) {
+            const data = await response.json().catch(function () { return {}; });
+            alert(data.error || "Konnte nicht entfernt werden.");
+            return;
+          }
+          loadMembersList();
+        } catch (e) {
+          alert("Verbindung fehlgeschlagen.");
+        }
+      });
+    }
+  }
+
+  async function refreshMemberStats(memberID, period) {
+    try {
+      const response = await fetch("/api/members/" + encodeURIComponent(memberID) + "/stats?period=" + period);
+      if (!response.ok) return;
+      const stats = await response.json();
+      document.getElementById("periodTripCount").textContent = "Fahrten diese" + (period === "week" ? " Woche: " : "n Monat: ") + stats.tripCount;
+    } catch (e) {}
+  }
+
+  // MARK: - Apotheken verwalten
+
+  async function loadPharmaciesList() {
+    settingsView = "pharmacies";
+    renderShell('<p class="muted">Lade…</p>');
+    try {
+      const response = await fetch("/api/pharmacies");
+      if (response.status === 401) { renderLogin(); return; }
+      if (!response.ok) { renderShell(backToSettingsHtml('<p class="error">Konnte Apotheken nicht laden.</p>')); return; }
+      const data = await response.json();
+      renderShell(pharmaciesListHtml(data.pharmacies));
+      wirePharmaciesList();
+    } catch (e) {
+      renderShell(backToSettingsHtml('<p class="error">Verbindung fehlgeschlagen.</p>'));
+    }
+  }
+
+  function pharmaciesListHtml(pharmacies) {
+    const rows = pharmacies.length
+      ? pharmacies.map(function (p) {
+          const status = p.hasSamples === true ? '<span class="yes">Proben</span>' : p.hasSamples === false ? '<span class="no">Keine Proben</span>' : '<span class="muted">Keine Meldung</span>';
+          const qrLabel = p.usesQRCheckIn ? " · QR" : "";
+          return '<div class="row pharmacy-row" data-id="' + escapeHtml(p.id) + '"><div>' + escapeHtml(p.name) + qrLabel + '</div><div>' + status + '</div></div>';
+        }).join("")
+      : '<p class="muted">Noch keine Apotheken angelegt.</p>';
+    return backToSettingsHtml('<h3>Apotheken verwalten</h3><button class="primary" id="addPharmacyBtn">Neue Apotheke anlegen</button>' + rows);
+  }
+
+  function wirePharmaciesList() {
+    document.getElementById("backToSettingsBtn").addEventListener("click", loadSettingsRoot);
+    document.getElementById("addPharmacyBtn").addEventListener("click", function () {
+      renderShell(addPharmacyFormHtml());
+      wireAddPharmacyForm();
+    });
+    card.querySelectorAll(".pharmacy-row").forEach(function (row) {
+      row.style.cursor = "pointer";
+      row.addEventListener("click", function () { loadPharmacyDetail(row.dataset.id); });
+    });
+  }
+
+  function addPharmacyFormHtml() {
+    return (
+      '<button class="secondary icon" id="cancelAddPharmacyBtn">&larr; Abbrechen</button>' +
+      '<h3>Neue Apotheke</h3>' +
+      '<input type="text" id="newPharmacyName" placeholder="Name der Apotheke" />' +
+      '<input type="text" id="newPharmacyAddress" placeholder="Adresse (optional)" />' +
+      '<label><input type="checkbox" id="newPharmacyQR" checked /> Web-Check-in per QR-Code</label>' +
+      '<button class="primary" id="createPharmacyBtn">Anlegen</button>' +
+      '<p class="error" id="addPharmacyError" style="display:none"></p>'
+    );
+  }
+
+  function wireAddPharmacyForm() {
+    document.getElementById("cancelAddPharmacyBtn").addEventListener("click", loadPharmaciesList);
+    document.getElementById("createPharmacyBtn").addEventListener("click", async function () {
+      const errorEl = document.getElementById("addPharmacyError");
+      errorEl.style.display = "none";
+      const name = document.getElementById("newPharmacyName").value.trim();
+      const address = document.getElementById("newPharmacyAddress").value.trim();
+      const usesQRCheckIn = document.getElementById("newPharmacyQR").checked;
+      try {
+        const response = await fetch("/api/pharmacies", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: name, address: address, usesQRCheckIn: usesQRCheckIn })
+        });
+        if (response.status === 401) { renderLogin(); return; }
+        if (!response.ok) {
+          const data = await response.json().catch(function () { return {}; });
+          errorEl.textContent = data.error || "Konnte nicht angelegt werden.";
+          errorEl.style.display = "block";
+          return;
+        }
+        loadPharmaciesList();
+      } catch (e) {
+        errorEl.textContent = "Verbindung fehlgeschlagen.";
+        errorEl.style.display = "block";
+      }
+    });
+  }
+
+  async function loadPharmacyDetail(pharmacyID) {
+    settingsView = "pharmacy";
+    selectedPharmacyID = pharmacyID;
+    renderShell('<p class="muted">Lade…</p>');
+    try {
+      const response = await fetch("/api/pharmacies/" + encodeURIComponent(pharmacyID));
+      if (response.status === 401) { renderLogin(); return; }
+      if (!response.ok) { renderShell(backToPharmaciesHtml('<p class="error">Konnte Apotheke nicht laden.</p>')); return; }
+      const detail = await response.json();
+      renderShell(pharmacyDetailHtml(detail));
+      wirePharmacyDetail(detail);
+    } catch (e) {
+      renderShell(backToPharmaciesHtml('<p class="error">Verbindung fehlgeschlagen.</p>'));
+    }
+  }
+
+  function backToPharmaciesHtml(innerHtml) {
+    return '<button class="secondary icon" id="backToPharmaciesBtn">&larr; Apotheken</button>' + innerHtml;
+  }
+
+  function pharmacyDetailHtml(detail) {
+    const qrSection = detail.usesQRCheckIn ? (
+      '<h3>Check-in-Link</h3>' +
+      '<p class="who">' + escapeHtml(detail.checkInURL) + '</p>' +
+      '<button class="secondary" id="copyLinkBtn">Link kopieren</button>'
+    ) : '<p class="muted">Diese Apotheke meldet nicht per QR-Code - Status wird hier manuell gepflegt.</p>';
+
+    return backToPharmaciesHtml(
+      '<h2>' + escapeHtml(detail.name) + '</h2>' +
+      (detail.address ? '<p class="who">' + escapeHtml(detail.address) + '</p>' : '') +
+      qrSection +
+      '<h3>Heute manuell melden</h3>' +
+      '<button class="primary" id="reportYesBtn" ' + (detail.hasSamples === true ? "disabled" : "") + '>Ja, Proben vorhanden</button>' +
+      '<button class="secondary" id="reportNoBtn" ' + (detail.hasSamples === false ? "disabled" : "") + '>Keine Proben</button>' +
+      '<button class="secondary" id="deletePharmacyBtn" style="color:#ff3b30">Apotheke löschen</button>' +
+      '<p class="error" id="pharmacyActionError" style="display:none"></p>'
+    );
+  }
+
+  function wirePharmacyDetail(detail) {
+    document.getElementById("backToPharmaciesBtn").addEventListener("click", loadPharmaciesList);
+    const copyBtn = document.getElementById("copyLinkBtn");
+    if (copyBtn) {
+      copyBtn.addEventListener("click", function () {
+        navigator.clipboard.writeText(detail.checkInURL).then(function () {
+          copyBtn.textContent = "Kopiert!";
+          setTimeout(function () { copyBtn.textContent = "Link kopieren"; }, 1500);
+        }).catch(function () {});
+      });
+    }
+    document.getElementById("reportYesBtn").addEventListener("click", function () { submitPharmacyReport(detail.id, true); });
+    document.getElementById("reportNoBtn").addEventListener("click", function () { submitPharmacyReport(detail.id, false); });
+    document.getElementById("deletePharmacyBtn").addEventListener("click", async function () {
+      if (!window.confirm(detail.name + " wirklich löschen? Alle Meldungen dieser Apotheke werden unwiderruflich gelöscht.")) return;
+      try {
+        const response = await fetch("/api/pharmacies/" + encodeURIComponent(detail.id), { method: "DELETE" });
+        if (response.status === 401) { renderLogin(); return; }
+        if (!response.ok) {
+          const data = await response.json().catch(function () { return {}; });
+          alert(data.error || "Konnte nicht gelöscht werden.");
+          return;
+        }
+        loadPharmaciesList();
+      } catch (e) {
+        alert("Verbindung fehlgeschlagen.");
+      }
+    });
+  }
+
+  async function submitPharmacyReport(pharmacyID, hasSamples) {
+    try {
+      const response = await fetch("/api/pharmacies/" + encodeURIComponent(pharmacyID) + "/report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hasSamples: hasSamples })
+      });
+      if (response.status === 401) { renderLogin(); return; }
+      if (!response.ok) {
+        const data = await response.json().catch(function () { return {}; });
+        alert(data.error || "Konnte nicht gespeichert werden.");
+        return;
+      }
+      loadPharmacyDetail(pharmacyID);
+    } catch (e) {
+      alert("Verbindung fehlgeschlagen.");
+    }
   }
 
   async function downloadReport(endpoint, title, formatLine, emptyMessage, filename) {
