@@ -15,10 +15,11 @@ directory = "./public"
 binding = "ASSETS"
 
 # Nicht geheim - dieselben Werte wie in web/server_config.py, siehe README.
-# Auf "production" umstellen, sobald das CloudKit-Schema per "Deploy Schema
-# Changes" nach Production deployed wurde (siehe README.md CloudKit-Setup
-# Punkt 6) - vorher liefert "production" nur leere/fehlende Records.
+# Seit 2026-09-15 auf "production" umgestellt: Schema war schon nach
+# Production deployed, Indexes/Security Roles dort geprüft. Release/
+# TestFlight-Builds der App schreiben in CloudKit Production, nicht
+# Development - der Worker muss also dieselbe Umgebung abfragen.
 [vars]
 CONTAINER_IDENTIFIER = "iCloud.com.johannesemmrich.probenfahrt"
-CLOUDKIT_ENVIRONMENT = "development"
-CLOUDKIT_KEY_ID = "3246716540467717da44ee82f5ac8f8fa61b532755cb510e4702e07252697542"
+CLOUDKIT_ENVIRONMENT = "production"
+CLOUDKIT_KEY_ID = "f5ff9c0e2bfa6639536ef44472ff7d88d4def49c8f32e22673e68514b5cfd8bf"

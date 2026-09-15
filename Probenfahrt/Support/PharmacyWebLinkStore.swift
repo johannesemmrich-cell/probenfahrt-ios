@@ -17,7 +17,15 @@ final class PharmacyWebLinkStore {
         baseURL = UserDefaults.standard.string(forKey: storageKey) ?? defaultBaseURL
     }
 
+    /// QR-Scanner erkennen eine schemalose Basis-URL (z.B. "mediproben.com"
+    /// statt "https://mediproben.com") oft gar nicht als Link oder werfen
+    /// den "?token=..."-Teil weg - anders als eine Browser-Adressleiste,
+    /// die das großzügig ergänzt. Deshalb hier hart absichern statt auf
+    /// korrekte manuelle Eingabe im Basis-URL-Feld zu vertrauen.
     func checkInURL(token: String) -> String {
-        "\(baseURL)?token=\(token)"
+        let normalizedBase = baseURL.hasPrefix("http://") || baseURL.hasPrefix("https://")
+            ? baseURL
+            : "https://\(baseURL)"
+        return "\(normalizedBase)?token=\(token)"
     }
 }
