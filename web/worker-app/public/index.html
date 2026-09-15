@@ -88,6 +88,9 @@
   .lock { color: #ff9500; font-size: 0.85rem; }
   .yes { color: #34c759; }
   .no { color: #6e6e73; }
+  .warn { color: #ff3b30; }
+  .survey-covered { background: rgba(52,199,89,0.12); border-radius: 8px; padding-left: 6px; padding-right: 6px; }
+  .current-badge { background: #34c759; color: #fff; font-size: 0.7rem; padding: 2px 8px; border-radius: 8px; font-weight: 600; }
   .legal-links { text-align: center; margin-top: 16px; font-size: 0.75rem; }
   .legal-links a { color: #a1a1a6; text-decoration: none; }
   .legal-links a:hover { text-decoration: underline; }
@@ -107,7 +110,8 @@
 
   let me = null;
   let activeTab = "survey";
-  let surveyMonth = null; // { year, month } - month ist 1-12
+  let surveyReferenceDate = null; // "YYYY-MM-DD" - Basis fürs 2-Wochen-Fenster
+  let surveyView = "current"; // "current" | "past"
   let samplesDate = null; // "YYYY-MM-DD"
   let adminMonth = null; // { year, month }
   let settingsView = "root"; // "root" | "members" | "member" | "pharmacies" | "pharmacy"
@@ -184,93 +188,216 @@
     card.querySelectorAll(".tab").forEach(function (btn) {
       btn.addEventListener("click", function () {
         activeTab = btn.dataset.tab;
-        if (activeTab === "survey") loadSurveyMonth(surveyMonth.year, surveyMonth.month);
+        if (activeTab === "survey") loadCurrentSurveys();
         else if (activeTab === "samples") loadSamplesDay(samplesDate);
         else { settingsView = "root"; loadSettingsRoot(); }
       });
     });
   }
 
-  async function loadSurveyMonth(year, month) {
-    surveyMonth = { year, month };
+  // MARK: - Umfragen (rollierendes 2-Wochen-Fenster, JS-Port von
+  // SurveyWeekWindow.swift - Freitag/Samstag/Sonntag springt auf nächste
+  // Woche Montag, sonst diese Woche)
+
+  function weekdayOf(dateString) {
+    const [y, m, d] = dateString.split("-").map(Number);
+    return new Date(y, m - 1, d).getDay(); // 0=So...6=Sa
+  }
+
+  function mondayStartOfWeekDateString(dateString) {
+    const daysSinceMonday = (weekdayOf(dateString) + 6) % 7; // Mo->0
+    return addDaysToDateString(dateString, -daysSinceMonday);
+  }
+
+  function currentAnchorMondayDateString(dateString) {
+    const thisMonday = mondayStartOfWeekDateString(dateString);
+    const weekday = weekdayOf(dateString);
+    const isPastThisWeeksSurveyDays = weekday === 0 || weekday >= 5; // So, Fr, Sa
+    return isPastThisWeeksSurveyDays ? addDaysToDateString(thisMonday, 7) : thisMonday;
+  }
+
+  function weekBlockFrom(weekStart) {
+    const days = [0, 1, 2, 3].map(function (i) { return addDaysToDateString(weekStart, i); });
+    return { weekStart: weekStart, weekEnd: days[3], days: days };
+  }
+
+  function currentWeekBlocks(dateString) {
+    const anchor = currentAnchorMondayDateString(dateString);
+    return [0, 1].map(function (weekOffset) { return weekBlockFrom(addDaysToDateString(anchor, weekOffset * 7)); });
+  }
+
+  function pastWeekBlocks(dateString, weeksBack) {
+    const anchor = currentAnchorMondayDateString(dateString);
+    const blocks = [];
+    for (let weeksAgo = 1; weeksAgo <= weeksBack; weeksAgo++) {
+      blocks.push(weekBlockFrom(addDaysToDateString(anchor, -7 * weeksAgo)));
+    }
+    return blocks; // most-recent-first
+  }
+
+  function formatShortDate(dateString) {
+    const [y, m, d] = dateString.split("-").map(Number);
+    const date = new Date(y, m - 1, d);
+    return WEEKDAY_NAMES[date.getDay()] + ", " + d + ". " + MONTH_NAMES[m - 1];
+  }
+
+  function canEditDayClientSide(dateString) {
+    return me.isAdmin || dateString >= todayDateString();
+  }
+
+  async function loadCurrentSurveys() {
+    activeTab = "survey";
+    surveyView = "current";
     renderShell('<p class="muted">Lade…</p>');
-    const { from, to } = monthRange(year, month);
+    const blocks = currentWeekBlocks(surveyReferenceDate);
+    const from = blocks[0].days[0];
+    const to = blocks[1].days[3];
     try {
       // mode=signup (nicht browse) - dieser Tab ist die Umfragen-Ansicht
       // (Ein-/Austragen), legt also wie SurveysView.swift fehlende
-      // Mo-Do-Tage im gerade angezeigten Monat an.
+      // Mo-Do-Tage im 2-Wochen-Fenster an.
       const response = await fetch("/api/survey-days?from=" + from + "&to=" + to + "&mode=signup");
       if (response.status === 401) { renderLogin(); return; }
       if (!response.ok) { renderShell('<p class="error">Konnte Umfragen nicht laden.</p>'); return; }
       const data = await response.json();
-      renderShell(surveyMonthHtml(year, month, data));
-      wireSurveyNav();
+      renderShell(surveyBlocksHtml(blocks, data, true));
+      wireSurveyBlocks(data, loadCurrentSurveys);
+      document.getElementById("pastSurveysBtn").addEventListener("click", loadPastSurveys);
     } catch (e) {
       renderShell('<p class="error">Verbindung fehlgeschlagen.</p>');
     }
   }
 
-  function surveyMonthHtml(year, month, data) {
+  async function loadPastSurveys() {
+    activeTab = "survey";
+    surveyView = "past";
+    renderShell('<p class="muted">Lade…</p>');
+    const blocks = pastWeekBlocks(surveyReferenceDate, 8); // most-recent-first
+    const from = blocks[blocks.length - 1].days[0];
+    const to = blocks[0].days[3];
+    try {
+      // mode=browse (nicht signup) - vergangene Wochen rein lesend
+      // durchblättern legt keine leeren Tage an.
+      const response = await fetch("/api/survey-days?from=" + from + "&to=" + to + "&mode=browse");
+      if (response.status === 401) { renderLogin(); return; }
+      if (!response.ok) { renderShell('<p class="error">Konnte vergangene Umfragen nicht laden.</p>'); return; }
+      const data = await response.json();
+      renderShell(surveyBlocksHtml(blocks, data, false));
+      wireSurveyBlocks(data, loadPastSurveys);
+      document.getElementById("backToCurrentSurveysBtn").addEventListener("click", loadCurrentSurveys);
+    } catch (e) {
+      renderShell('<p class="error">Verbindung fehlgeschlagen.</p>');
+    }
+  }
+
+  function surveyBlocksHtml(blocks, data, isCurrent) {
     const entriesByDay = {};
     data.entries.forEach(function (entry) {
       (entriesByDay[entry.dayID] = entriesByDay[entry.dayID] || []).push(entry);
     });
-    const days = data.days.slice().sort(function (a, b) { return a.date < b.date ? -1 : 1; });
-    const rows = days.length
-      ? days.map(function (day) {
-          const dayEntries = entriesByDay[day.id] || [];
-          const names = dayEntries
-            .map(function (e) { return escapeHtml(e.abbreviation || e.name || "?"); })
-            .join(", ") || '<span class="muted">niemand eingetragen</span>';
-          const lock = day.isLocked ? '<span class="lock">gesperrt' + (day.lockReason ? ": " + escapeHtml(day.lockReason) : "") + '</span>' : "";
-          const iAmIn = dayEntries.some(function (e) { return e.userID === me.id; });
-          const toggleBtn = day.isLocked
-            ? ""
-            : '<button class="secondary icon signup-toggle" data-day="' + escapeHtml(day.id) + '" data-signed-up="' + iAmIn + '">' + (iAmIn ? "Austragen" : "Eintragen") + '</button>';
-          const lockBtn = me.isAdmin
-            ? '<button class="secondary icon lock-toggle" data-day="' + escapeHtml(day.id) + '" data-locked="' + day.isLocked + '">' + (day.isLocked ? "Entsperren" : "Sperren") + '</button>'
-            : "";
+    const dayByDate = {};
+    data.days.forEach(function (day) { dayByDate[day.date] = day; });
+
+    const blocksHtml = blocks.map(function (block, index) {
+      const badge = (isCurrent && index === 0) ? ' <span class="current-badge">Aktuell</span>' : "";
+      const header = '<h3>Fahrplan vom ' + formatShortDate(block.days[0]) + ' bis ' + formatShortDate(block.days[3]) + badge + '</h3>';
+      const rows = block.days.map(function (dateString) {
+        const day = dayByDate[dateString];
+        if (!day) return '<div class="row"><div>' + formatShortDate(dateString) + '</div><div class="muted">nicht angelegt</div></div>';
+        return surveyDayRowHtml(day, entriesByDay[day.id] || []);
+      }).join("");
+      return header + rows;
+    }).join("");
+
+    return isCurrent
+      ? (blocksHtml + '<button class="secondary" id="pastSurveysBtn">Vergangene Umfragen</button>')
+      : ('<button class="secondary icon" id="backToCurrentSurveysBtn">&larr; Zurück zu Aktuell</button>' + blocksHtml);
+  }
+
+  function surveyDayRowHtml(day, entries) {
+    const count = entries.length;
+    const marker = count > 1 ? ' <span class="warn">!</span>' : (count === 1 ? ' <span class="yes">&#10003;</span>' : "");
+    const rowClass = count === 1 ? "row survey-covered" : "row";
+    const names = entries.map(function (e) { return escapeHtml(e.abbreviation || e.name || "?"); }).join(", ") || '<span class="muted">niemand eingetragen</span>';
+    const bodyLine = day.isLocked
+      ? '<span class="lock">gesperrt' + (day.lockReason ? ": " + escapeHtml(day.lockReason) : "") + '</span>'
+      : names;
+
+    const iAmIn = entries.some(function (e) { return e.userID === me.id; });
+    const canEdit = canEditDayClientSide(day.date);
+    let actionBtn = "";
+    if (!day.isLocked) {
+      if (canEdit) {
+        actionBtn = '<button class="secondary icon signup-toggle" data-day="' + escapeHtml(day.id) + '" data-signed-up="' + iAmIn + '">' + (iAmIn ? "Austragen" : "Eintragen") + '</button>';
+      } else if (me.isAdmin) {
+        actionBtn = '<button class="secondary icon manage-day" data-day="' + escapeHtml(day.id) + '">Verwalten</button>';
+      }
+    }
+    const lockBtn = me.isAdmin
+      ? '<button class="secondary icon lock-toggle" data-day="' + escapeHtml(day.id) + '" data-locked="' + day.isLocked + '">' + (day.isLocked ? "Entsperren" : "Sperren") + '</button>'
+      : "";
+
+    return (
+      '<div class="' + rowClass + '"><div>' + formatShortDate(day.date) + marker + '<br><span class="who">' + bodyLine + '</span></div>' +
+      '<div>' + actionBtn + ' ' + lockBtn + '</div></div>'
+    );
+  }
+
+  function wireSurveyBlocks(data, reloadFn) {
+    card.querySelectorAll(".signup-toggle").forEach(function (btn) {
+      btn.addEventListener("click", function () { toggleSignup(btn.dataset.day, btn.dataset.signedUp === "true", null, reloadFn); });
+    });
+    card.querySelectorAll(".lock-toggle").forEach(function (btn) {
+      btn.addEventListener("click", function () { toggleLock(btn.dataset.day, btn.dataset.locked === "true", reloadFn); });
+    });
+    card.querySelectorAll(".manage-day").forEach(function (btn) {
+      btn.addEventListener("click", function () { openManageDay(btn.dataset.day, data, reloadFn); });
+    });
+  }
+
+  function openManageDay(dayID, data, reloadFn) {
+    const day = data.days.find(function (d) { return d.id === dayID; });
+    const entries = data.entries.filter(function (e) { return e.dayID === dayID; });
+    renderShell(manageDayHtml(day, entries, data.members));
+    wireManageDay(day, reloadFn);
+  }
+
+  function manageDayHtml(day, entries, members) {
+    const entriesByUserID = {};
+    entries.forEach(function (e) { entriesByUserID[e.userID] = true; });
+    const rows = members.length
+      ? members.map(function (m) {
+          const isIn = !!entriesByUserID[m.id];
           return (
-            '<div class="row"><div>' + escapeHtml(formatDateString(day.date)) + (lock ? " · " + lock : "") + '<br><span class="who">' + names + '</span></div>' +
-            '<div>' + toggleBtn + " " + lockBtn + '</div></div>'
+            '<div class="row"><div>' + escapeHtml(m.name) + '</div><div>' +
+            '<button class="secondary icon manage-toggle" data-user="' + escapeHtml(m.id) + '" data-signed-up="' + isIn + '">' + (isIn ? "Austragen" : "Eintragen") + '</button>' +
+            '</div></div>'
           );
         }).join("")
-      : '<p class="muted">Für diesen Monat sind noch keine Umfrage-Tage angelegt.</p>';
+      : '<p class="muted">Keine Mitglieder.</p>';
     return (
-      '<div class="nav">' +
-        '<button class="secondary icon" id="prevMonthBtn">&larr;</button>' +
-        '<strong>' + MONTH_NAMES[month - 1] + " " + year + '</strong>' +
-        '<button class="secondary icon" id="nextMonthBtn">&rarr;</button>' +
-      '</div>' +
+      '<button class="secondary icon" id="backFromManageBtn">&larr; Zurück</button>' +
+      '<h3>' + formatShortDate(day.date) + ' verwalten</h3>' +
       rows
     );
   }
 
-  function wireSurveyNav() {
-    document.getElementById("prevMonthBtn").addEventListener("click", function () {
-      const m = surveyMonth.month === 1 ? 12 : surveyMonth.month - 1;
-      const y = surveyMonth.month === 1 ? surveyMonth.year - 1 : surveyMonth.year;
-      loadSurveyMonth(y, m);
-    });
-    document.getElementById("nextMonthBtn").addEventListener("click", function () {
-      const m = surveyMonth.month === 12 ? 1 : surveyMonth.month + 1;
-      const y = surveyMonth.month === 12 ? surveyMonth.year + 1 : surveyMonth.year;
-      loadSurveyMonth(y, m);
-    });
-    card.querySelectorAll(".signup-toggle").forEach(function (btn) {
-      btn.addEventListener("click", function () { toggleSignup(btn.dataset.day, btn.dataset.signedUp === "true"); });
-    });
-    card.querySelectorAll(".lock-toggle").forEach(function (btn) {
-      btn.addEventListener("click", function () { toggleLock(btn.dataset.day, btn.dataset.locked === "true"); });
+  function wireManageDay(day, reloadFn) {
+    document.getElementById("backFromManageBtn").addEventListener("click", reloadFn);
+    card.querySelectorAll(".manage-toggle").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        toggleSignup(day.id, btn.dataset.signedUp === "true", btn.dataset.user, reloadFn);
+      });
     });
   }
 
-  async function toggleSignup(dayID, currentlySignedUp) {
+  async function toggleSignup(dayID, currentlySignedUp, userID, reloadFn) {
     try {
+      const body = userID ? { dayID: dayID, userID: userID } : { dayID: dayID };
       const response = await fetch("/api/survey-entries", {
         method: currentlySignedUp ? "DELETE" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dayID: dayID })
+        body: JSON.stringify(body)
       });
       if (response.status === 401) { renderLogin(); return; }
       if (!response.ok) {
@@ -278,13 +405,13 @@
         alert(data.error || "Konnte nicht gespeichert werden.");
         return;
       }
-      loadSurveyMonth(surveyMonth.year, surveyMonth.month);
+      reloadFn();
     } catch (e) {
       alert("Verbindung fehlgeschlagen.");
     }
   }
 
-  async function toggleLock(dayID, currentlyLocked) {
+  async function toggleLock(dayID, currentlyLocked, reloadFn) {
     let reason = "";
     if (!currentlyLocked) {
       reason = window.prompt("Grund für die Sperre (optional):", "") || "";
@@ -301,7 +428,7 @@
         alert(data.error || "Konnte nicht gespeichert werden.");
         return;
       }
-      loadSurveyMonth(surveyMonth.year, surveyMonth.month);
+      reloadFn();
     } catch (e) {
       alert("Verbindung fehlgeschlagen.");
     }
@@ -931,11 +1058,10 @@
         return;
       }
       me = await response.json();
-      const now = new Date();
-      surveyMonth = { year: now.getFullYear(), month: now.getMonth() + 1 };
+      surveyReferenceDate = todayDateString();
       samplesDate = todayDateString();
       activeTab = "survey";
-      loadSurveyMonth(surveyMonth.year, surveyMonth.month);
+      loadCurrentSurveys();
     } catch (e) {
       render('<h1>Probenfahrt</h1><p class="error">Verbindung fehlgeschlagen. Bitte Internetverbindung prüfen und die Seite neu laden.</p>', false);
     }
