@@ -1,0 +1,32 @@
+name = "probenfahrt-app"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+# Custom Domain: Cloudflare provisioniert DNS-Eintrag + TLS-Zertifikat
+# automatisch, weil mediproben.com (und damit auch die Subdomain
+# app.mediproben.com) schon als Zone in diesem Cloudflare-Account liegt.
+# Bewusst ein eigener, zweiter Worker statt einer Route auf demselben
+# Worker wie web/worker/ - siehe README für die Begründung (getrennte
+# Static-Assets-Verzeichnisse pro Worker, saubere Trennung vom
+# QR-only-Apotheken-Check-in).
+routes = [
+  { pattern = "app.mediproben.com", custom_domain = true }
+]
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+# Nicht geheim - dieselben Werte wie in web/worker/wrangler.toml (gleicher
+# CloudKit-Container). Secrets sind pro Worker getrennt und müssen hier
+# zusätzlich per `wrangler secret put` gesetzt werden, auch wenn der Wert
+# identisch zum anderen Worker ist:
+#   CLOUDKIT_PRIVATE_KEY_PKCS8_BASE64 (gleicher Server-to-Server-Key)
+#   SESSION_HMAC_SECRET (neu, nur für dieses Feature - signiert das
+#     Session-Cookie, NICHT identisch mit dem Passwort-Pepper)
+#   WEB_PASSWORD_PEPPER (neu, siehe BACKLOG #5 - Pepper fürs Hashen von
+#     User.webPasswordHash, muss mit dem Wert im iOS-Bundle übereinstimmen)
+[vars]
+CONTAINER_IDENTIFIER = "iCloud.com.johannesemmrich.probenfahrt"
+CLOUDKIT_ENVIRONMENT = "development"
+CLOUDKIT_KEY_ID = "3246716540467717da44ee82f5ac8f8fa61b532755cb510e4702e07252697542"

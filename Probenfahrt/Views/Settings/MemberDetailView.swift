@@ -15,7 +15,9 @@ struct MemberDetailView: View {
     @Environment(DevModeStore.self) private var devMode
 
     @State private var abbreviation: String
-    @State private var webPassword: String
+    @State private var webPassword: String = ""
+    @State private var hasEditedWebPassword = false
+    @State private var webPasswordIsSet: Bool
     @State private var errorMessage: String?
     @State private var webPasswordErrorMessage: String?
     @State private var allEntries: [SurveyEntryWithDate] = []
@@ -34,7 +36,7 @@ struct MemberDetailView: View {
         self.currentUser = currentUser
         self.onRemoved = onRemoved
         _abbreviation = State(initialValue: user.abbreviation)
-        _webPassword = State(initialValue: user.webPassword ?? "")
+        _webPasswordIsSet = State(initialValue: user.webPasswordHash != nil)
     }
 
     private var periodComponent: Calendar.Component { period == .week ? .weekOfYear : .month }
@@ -79,9 +81,15 @@ struct MemberDetailView: View {
 
             if isFullAdmin {
                 Section {
-                    TextField("Passwort (leer = kein Zugang)", text: $webPassword)
+                    // Zeigt nie das bestehende Passwort an - es ist nur noch
+                    // gehasht gespeichert, kann also gar nicht mehr gelesen
+                    // werden (BACKLOG #5). hasEditedWebPassword unterscheidet
+                    // "Feld nie angefasst" (nichts tun) von "Feld bewusst
+                    // geleert" (Zugang entfernen).
+                    TextField(webPasswordIsSet ? "Neues Passwort (leer = Zugang entfernen)" : "Passwort (leer = kein Zugang)", text: $webPassword)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                        .onChange(of: webPassword) { hasEditedWebPassword = true }
                         // onDisappear only (not also onSubmit, which only
                         // fires on the keyboard's Return key) - covers every
                         // in-app way of leaving this screen with exactly one
@@ -96,7 +104,9 @@ struct MemberDetailView: View {
                 } header: {
                     Text("Web-Zugang")
                 } footer: {
-                    Text("Mit diesem Passwort kann sich \(user.name) auf mediproben.com anmelden, ohne einen QR-Code zu scannen. Feld leeren und speichern entfernt den Zugang wieder.")
+                    Text(webPasswordIsSet
+                         ? "Aktuell ist ein Passwort gesetzt, mit dem sich \(user.name) auf app.mediproben.com anmelden kann. Neues Passwort eingeben zum Ändern, Feld leeren und verlassen zum Entfernen."
+                         : "Noch kein Web-Zugang eingerichtet. Passwort eingeben, damit sich \(user.name) auf app.mediproben.com anmelden kann, ohne ein Apple-Gerät zu benutzen.")
                 }
             }
 
@@ -222,16 +232,19 @@ struct MemberDetailView: View {
     }
 
     private func saveWebPassword() async {
+        guard hasEditedWebPassword else { return }
         webPasswordErrorMessage = nil
         let trimmed = webPassword.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty, trimmed != (user.webPassword ?? "") {
+        if !trimmed.isEmpty {
             if let taken = try? await userRepository.isWebPasswordTaken(trimmed, excluding: user.id), taken {
                 webPasswordErrorMessage = "Dieses Passwort ist schon einem anderen Mitglied zugewiesen."
-                webPassword = user.webPassword ?? ""
                 return
             }
         }
         try? await userRepository.setWebPassword(trimmed, for: user.id)
+        webPasswordIsSet = !trimmed.isEmpty
+        hasEditedWebPassword = false
+        webPassword = ""
     }
 
     private func setViceAdmin(_ isOn: Bool) async {

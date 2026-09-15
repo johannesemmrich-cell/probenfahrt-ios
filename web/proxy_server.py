@@ -10,7 +10,6 @@ import http.server
 import json
 import socketserver
 import sys
-import time
 import urllib.parse
 import uuid
 from datetime import datetime
@@ -69,8 +68,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == "/api/report":
             return self._handle_post_report()
-        if parsed.path == "/api/login":
-            return self._handle_post_login()
         self.send_error(404)
 
     def _handle_get_pharmacy(self, parsed):
@@ -127,32 +124,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 fields["groupID"] = {"value": location["groupID"], "type": "STRING"}
             client.save_report(record_name, fields, exists=existing is not None)
             self._send_json(200, {"ok": True, "hasSamples": has_samples})
-        except CloudKitError as e:
-            self._send_json(502, {"error": str(e), "detail": e.detail})
-        except Exception as e:  # noqa: BLE001 - surfaced to the page for debugging tonight
-            self._send_json(500, {"error": str(e)})
-
-
-    def _handle_post_login(self):
-        length = int(self.headers.get("Content-Length", 0))
-        try:
-            payload = json.loads(self.rfile.read(length))
-            password = payload["password"]
-            if not password:
-                raise ValueError("password fehlt")
-        except (KeyError, ValueError, json.JSONDecodeError):
-            return self._send_json(400, {"error": "Ungültige Anfrage"})
-
-        try:
-            client = self._client()
-            user = client.find_user_by_password(password)
-            if not user:
-                # No account lockout/CAPTCHA yet (see BACKLOG/chat) - this
-                # delay is a cheap, stateless speed bump against naive
-                # scripted brute-forcing, not real rate limiting.
-                time.sleep(1)
-                return self._send_json(401, {"error": "Falsches Passwort"})
-            self._send_json(200, user)
         except CloudKitError as e:
             self._send_json(502, {"error": str(e), "detail": e.detail})
         except Exception as e:  # noqa: BLE001 - surfaced to the page for debugging tonight

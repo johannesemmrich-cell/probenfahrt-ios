@@ -99,7 +99,7 @@ für dich erledigen, dafür gibt es keine API:
    **Development**-Umgebung automatisch mit den passenden Feldern.
 4. **Felder als "Queryable" markieren.** Im Dashboard unter Schema:
    - `TeamGroup`: `joinCode`, `pharmacyJoinCode`
-   - `User`: `groupID`, `webPassword`
+   - `User`: `groupID`, `webPasswordHash`
    - `SurveyDay`: `groupID`, `date`, `dayID`
    - `SurveyEntry`: `surveyDayID`, `groupID`
    - `ChatMessage`: `groupID`, `senderID`, `recipientID`
@@ -108,6 +108,11 @@ für dich erledigen, dafür gibt es keine API:
      Push-Abo für "Proben da" filtert live auf `hasSamples == 1`)
    Ohne das schlagen Abfragen mit einer klaren Fehlermeldung fehl ("field
    ... is not marked queryable") — dann hier nachtragen.
+   **Zusätzlich für die Web-App (`web/worker-app/`):** `SurveyDay.date`
+   muss zusätzlich als **Sortable** markiert sein — die Kalender-Ansicht
+   filtert per Zeitraum (`GREATER_THAN_OR_EQUALS`/`LESS_THAN_OR_EQUALS`),
+   nicht per exaktem Treffer, und das braucht laut CloudKit-Doku Sortable
+   zusätzlich zu Queryable. Konnte ich nicht selbst im Dashboard prüfen.
 5. **Server-to-Server-Key statt "World"-Rolle.** Ursprünglich war geplant,
    dass die Web-Seite direkt (anonym, per API-Token) über CloudKit JS
    schreibt — das geht aber nicht: die `_world`-Sicherheitsrolle lässt sich
@@ -211,17 +216,84 @@ deployen und `CLOUDKIT_ENVIRONMENT` in `wrangler.toml` umstellen (siehe
 CloudKit-Setup Punkt 6 oben) sowie QR-Code-Basis-URL in der App auf
 `https://mediproben.com` setzen.
 
-**Stand 2026-09-15:** Der Zugriffsschutz "nur per QR-Code, sonst Passwort"
-ist als erster Schritt gebaut (admin-verwaltete Passwörter pro Nutzer in
-MemberDetailView, `POST /api/login` in beiden Backends) — ruft man
-mediproben.com ohne Token auf, erscheint jetzt ein Passwortfeld statt einer
-Fehlermeldung. Bewusst noch ohne Folgefunktion: bei richtigem Passwort
-erscheint nur eine Begrüßung mit Name, keine Session/Cookie, keine weitere
-Aktion möglich — das Wie geht's weiter ist mit dem User noch nicht
-abgestimmt. `webPassword` muss dafür wie oben (Punkt 4) als Queryable
-markiert sein, sonst schlägt der Login mit einem CloudKit-Fehler fehl.
+**Stand 2026-09-15:** Der zuerst hier gebaute Passwort-Login-Zweig
+("Zugriffsschutz nur per QR-Code, sonst Passwort", `POST /api/login` direkt
+auf dieser Seite) wurde wieder entfernt — mediproben.com ist jetzt wieder
+strikt reiner QR-Code-Zugang, ohne jeden Passwort-Fallback. Grund: das
+Passwort-Login zieht stattdessen auf eine komplett getrennte neue Subdomain
+(`app.mediproben.com`, `web/worker-app/`) um und führt dort in eine echte
+Web-App-Version der App (Umfragen/Kalender/Proben-Status/Admin-PDF-Export,
+ohne Team-Chat) statt nur in eine Begrüßung — siehe `web/worker-app/` sobald
+vorhanden. `webPassword` wird im Zuge dessen zu `webPasswordHash` (gehasht
+statt Klartext, siehe BACKLOG #5).
 
-## Test-Zugänge (Mock-Daten)
+### Web-App für Team-Mitglieder unter app.mediproben.com (web/worker-app/)
+
+Zweiter, komplett eigenständiger Cloudflare Worker (eigenes `wrangler.toml`,
+eigene Custom-Domain-Route `app.mediproben.com`, eigenes `public/`) für
+Team-Mitglieder ohne Apple-Gerät — Feature-Parität zur App außer Team-Chat
+(Umfragen, Kalender, Proben-Status, Admin-PDF-Export). Teilt sich mit
+`web/worker/` nur die CloudKit-Signatur-Logik (`web/shared/cloudkit.js`),
+sonst nichts — bewusst getrennt, damit das Passwort-Login nie über die
+Apotheken-Route erreichbar ist.
+
+**Login-Modell:** kein Apple-ID/CloudKit-Session-Login, sondern ein von
+einem Admin pro Mitglied vergebenes Passwort (`MemberDetailView` in der
+App), gehasht als `User.webPasswordHash` gespeichert (siehe oben). Nach
+erfolgreichem Login setzt der Worker ein selbst signiertes, **host-only**
+Session-Cookie (HMAC-SHA256, 30 Tage, bei jedem gültigen Request gleitend
+verlängert — kein Self-Service-Passwort-Reset vorgesehen, deshalb keine
+kurze TTL).
+
+Setup (einmalig, zusätzlich zu den Schritten oben für `web/worker/`):
+
+```bash
+cd web/worker-app
+npx wrangler login                     # falls noch nicht angemeldet
+npx wrangler secret put CLOUDKIT_PRIVATE_KEY_PKCS8_BASE64
+# ^ derselbe Wert wie beim Apotheken-Worker (gleicher CloudKit-Container),
+#   Secrets sind aber pro Worker getrennt und müssen hier separat gesetzt werden
+npx wrangler secret put SESSION_HMAC_SECRET
+# ^ beliebiger zufälliger String, signiert nur das Session-Cookie
+npx wrangler secret put WEB_PASSWORD_PEPPER
+# ^ MUSS exakt WebPasswordPepper.value aus
+#   Probenfahrt/Support/WebPasswordPepper.swift entsprechen, sonst matcht
+#   kein in der App gesetztes Passwort hier jemals
+npx wrangler deploy
+```
+
+**PDF-Export ohne vendorte Bibliothek:** `PDFReportRenderer.swift`
+(UIKit/`UIGraphicsPDFRenderer`) ist im Browser nicht nutzbar, aber das
+Layout ist trivial (Titel + Zeilenliste, eine A4-Seite, keine Paginierung).
+Statt eine ganze PDF-Bibliothek wie pdf-lib zu vendoren (unverhältnismäßig
+großer, kaum prüfbarer Blob für diesen einfachen Fall), baut
+`buildSimplePdfBytes` in `public/index.html` die PDF-Bytes selbst
+(Helvetica/WinAnsiEncoding, gegen `pdftotext` verifiziert) — passt zum
+bisherigen Null-Abhängigkeiten-Stil der Seite.
+
+**Stand 2026-09-15:** Alle laut Plan vorgesehenen Endpunkte sind gebaut:
+Login/Session (`/api/login`, `/api/logout`, `/api/me`), Umfragen/Kalender
+lesend + schreibend (`GET /api/survey-days` mit `mode=browse`/`mode=signup`,
+`POST`/`DELETE /api/survey-entries` fürs Ein-/Austragen,
+`POST /api/survey-days/:id/lock` fürs Sperren/Entsperren), Proben-Status
+lesend (`GET /api/samples`) und die Admin-PDF-Endpunkte
+(`/api/reports/monthly`/`/api/reports/samples`, inkl. Download-Button im
+Frontend). Die Vergangenheits-Regel (nur Admins dürfen vergangene Tage
+bearbeiten) ist dabei erstmals im ganzen Projekt echt serverseitig
+durchgesetzt, nicht nur im Client-UI wie bisher überall sonst (BACKLOG #2).
+
+Alles lokal gegen `wrangler dev` getestet (Routing/Auth-Gating/
+Rollen-Gating/Admin-für-andere-Gating/Fehlerbehandlung, inkl. eines dabei
+gefundenen und gefixten Bugs: ein manipuliertes Session-Cookie crashte mit
+500 statt sauber 401 zurückzugeben) — noch **nicht** live deployed, noch
+kein echter End-zu-Ende-Test gegen reales CloudKit (fehlende/falsch
+konfigurierte Queryable/Sortable-Felder im Dashboard fallen erst dabei
+auf). Frontend deckt bewusst nur "eigenes Ein-/Austragen" ab, nicht das
+Admin-"für andere eintragen" (Backend unterstützt es, UI dafür fehlt noch)
+— ebenso fehlt eine UI für Mitglieder-/Apotheken-Verwaltung (bewusst
+außerhalb des Scopes, siehe oben).
+
+
 
 Im Onboarding wird zuerst der Code abgefragt — er entscheidet, welchen
 Account man bekommt. Beide Codes lösen zur selben, von

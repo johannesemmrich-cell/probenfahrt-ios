@@ -1,104 +1,12 @@
 /**
- * Cloudflare-Worker-Portierung von web/proxy_server.py + web/cloudkit_client.py.
- * Gleiches Protokoll, gleiche Endpunkte (/api/pharmacy, /api/report), gleiche
- * CloudKit-Server-to-Server-Auth - nur die Laufzeitumgebung ist anders
- * (läuft bei Cloudflare statt auf einem eigenen Server/Mac).
- *
- * Wichtiger Unterschied zur Python-Version: die Web Crypto API (die einzige
- * Krypto-API, die in Workers verfügbar ist) liefert ECDSA-Signaturen im
- * rohen IEEE-P1363-Format (r || s, je 32 Byte), aber Apples CloudKit Web
- * Services erwarten DER-kodierte Signaturen (wie sie Python/OpenSSL/Node
- * standardmäßig erzeugen) - siehe derEncodeSignature() unten.
+ * Cloudflare-Worker für den Apotheken-Web-Check-in unter mediproben.com.
+ * Nur per QR-Code-Token erreichbar (siehe public/index.html) - kein
+ * Passwort-Login mehr hier, das lebt komplett getrennt in web/worker-app/
+ * (app.mediproben.com). Gemeinsame CloudKit-Signatur-Logik liegt in
+ * web/shared/cloudkit.js (siehe dort für die DER-Signatur-Begründung).
  */
 
-const CLOUDKIT_HOST = "https://api.apple-cloudkit.com";
-
-function databasePath(env, operation) {
-  return `/database/1/${env.CONTAINER_IDENTIFIER}/${env.CLOUDKIT_ENVIRONMENT}/public/${operation}`;
-}
-
-function base64ToBytes(base64) {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-}
-
-function bytesToBase64(bytes) {
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-  return btoa(binary);
-}
-
-/** Strips a leading 0x00 pad byte, or adds one if the high bit is set (DER INTEGERs are signed). */
-function toDerInteger(bytes) {
-  let i = 0;
-  while (i < bytes.length - 1 && bytes[i] === 0) i++;
-  let trimmed = bytes.slice(i);
-  if (trimmed[0] & 0x80) {
-    const padded = new Uint8Array(trimmed.length + 1);
-    padded.set(trimmed, 1);
-    trimmed = padded;
-  }
-  return trimmed;
-}
-
-/** Converts Web Crypto's raw (r||s) P-256 ECDSA signature into the DER SEQUENCE{INTEGER,INTEGER} CloudKit expects. */
-function derEncodeSignature(rawSignature) {
-  const bytes = new Uint8Array(rawSignature);
-  const r = toDerInteger(bytes.slice(0, 32));
-  const s = toDerInteger(bytes.slice(32, 64));
-  const rField = new Uint8Array([0x02, r.length, ...r]);
-  const sField = new Uint8Array([0x02, s.length, ...s]);
-  const body = new Uint8Array([...rField, ...sField]);
-  return new Uint8Array([0x30, body.length, ...body]);
-}
-
-async function importPrivateKey(pkcs8Base64) {
-  const keyBytes = base64ToBytes(pkcs8Base64);
-  return crypto.subtle.importKey(
-    "pkcs8",
-    keyBytes,
-    { name: "ECDSA", namedCurve: "P-256" },
-    false,
-    ["sign"]
-  );
-}
-
-async function signAndPost(env, path, bodyObject) {
-  const bodyBytes = new TextEncoder().encode(JSON.stringify(bodyObject));
-  const date = new Date().toISOString().replace(/\.\d+Z$/, "Z");
-  const bodyHashBuffer = await crypto.subtle.digest("SHA-256", bodyBytes);
-  const bodyHashBase64 = bytesToBase64(new Uint8Array(bodyHashBuffer));
-  const message = new TextEncoder().encode(`${date}:${bodyHashBase64}:${path}`);
-
-  const privateKey = await importPrivateKey(env.CLOUDKIT_PRIVATE_KEY_PKCS8_BASE64);
-  const rawSignature = await crypto.subtle.sign(
-    { name: "ECDSA", hash: "SHA-256" },
-    privateKey,
-    message
-  );
-  const signatureBase64 = bytesToBase64(derEncodeSignature(rawSignature));
-
-  const response = await fetch(CLOUDKIT_HOST + path, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Apple-CloudKit-Request-KeyID": env.CLOUDKIT_KEY_ID,
-      "X-Apple-CloudKit-Request-ISO8601Date": date,
-      "X-Apple-CloudKit-Request-SignatureV1": signatureBase64,
-    },
-    body: bodyBytes,
-  });
-
-  const json = await response.json();
-  if (!response.ok) {
-    const error = new Error(`CloudKit HTTP ${response.status}`);
-    error.detail = JSON.stringify(json);
-    throw error;
-  }
-  return json;
-}
+import { databasePath, signAndPost } from "../../shared/cloudkit.js";
 
 async function findLocationByToken(env, token) {
   const body = {
@@ -117,32 +25,6 @@ async function findLocationByToken(env, token) {
     id: fields.locationID.value,
     groupID: fields.groupID ? fields.groupID.value : null,
     name: fields.name.value,
-  };
-}
-
-/**
- * Web-only login (no QR code / token): an admin assigns each team member an
- * optional password in the app (MemberDetailView) so they can identify
- * themselves here without scanning anything. Deliberately no session/cookie
- * yet and no functionality beyond the greeting - see BACKLOG/chat, this is
- * step one of a feature that's still being scoped out.
- */
-async function findUserByPassword(env, password) {
-  const body = {
-    query: {
-      recordType: "User",
-      filterBy: [
-        { fieldName: "webPassword", comparator: "EQUALS", fieldValue: { value: password, type: "STRING" } },
-      ],
-    },
-  };
-  const result = await signAndPost(env, databasePath(env, "records/query"), body);
-  const records = result.records || [];
-  if (!records.length || !records[0].fields) return null;
-  const fields = records[0].fields;
-  return {
-    name: fields.name ? fields.name.value : "",
-    abbreviation: fields.abbreviation ? fields.abbreviation.value : "",
   };
 }
 
@@ -248,35 +130,6 @@ async function handlePostReport(request, env) {
   }
 }
 
-async function handlePostLogin(request, env) {
-  let password;
-  try {
-    const payload = await request.json();
-    password = payload.password;
-    if (!password) throw new Error("password fehlt");
-  } catch {
-    return jsonResponse(400, { error: "Ungültige Anfrage" });
-  }
-
-  try {
-    const user = await findUserByPassword(env, password);
-    if (!user) {
-      // No account lockout/CAPTCHA yet (see BACKLOG/chat) - this delay is a
-      // cheap, stateless speed bump against naive scripted brute-forcing,
-      // not real rate limiting.
-      await sleep(1000);
-      return jsonResponse(401, { error: "Falsches Passwort" });
-    }
-    return jsonResponse(200, user);
-  } catch (error) {
-    return jsonResponse(502, { error: String(error), detail: error.detail });
-  }
-}
-
-function sleep(milliseconds) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -285,9 +138,6 @@ export default {
     }
     if (request.method === "POST" && url.pathname === "/api/report") {
       return handlePostReport(request, env);
-    }
-    if (request.method === "POST" && url.pathname === "/api/login") {
-      return handlePostLogin(request, env);
     }
     // Alles andere (/, /index.html, ...) wird schon automatisch von den
     // Workers Static Assets aus public/ ausgeliefert, bevor dieser Fetch-

@@ -23,3 +23,10 @@ __pycache__/
 # Cloudflare Worker deploy artifacts
 web/worker/.wrangler/
 web/worker/node_modules/
+web/worker-app/.wrangler/
+web/worker-app/node_modules/
+
+# Lokale Secrets für `wrangler dev` (Pendant zu server_config.py) — nie
+# committen, echte Werte kommen für den Live-Deploy per `wrangler secret put`
+web/worker/.dev.vars
+web/worker-app/.dev.vars

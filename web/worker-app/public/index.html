@@ -1,0 +1,540 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Probenfahrt · Web-App</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f2f2f7;
+    color: #1c1c1e;
+    padding: 24px;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { background: #000; color: #f2f2f7; }
+    .card { background: #1c1c1e; }
+    .muted { color: #8e8e93; }
+    button.secondary, button.tab { background: #2c2c2e; color: #f2f2f7; border-color: #3a3a3c; }
+    button.tab.active { background: #34c759; color: #fff; }
+    input[type="password"] { background: #1c1c1e; color: #f2f2f7; border-color: #3a3a3c; }
+    .row { border-color: #3a3a3c; }
+  }
+  .card {
+    width: 100%;
+    max-width: 420px;
+    margin-top: 40px;
+    background: #fff;
+    border-radius: 20px;
+    padding: 32px 24px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+    text-align: center;
+  }
+  .card.app { max-width: 640px; text-align: left; margin-top: 16px; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  h2 { font-size: 1.05rem; margin: 0; }
+  .muted { color: #6e6e73; font-size: 0.95rem; margin: 0 0 24px; }
+  .card.app .muted { margin: 0; }
+  button {
+    padding: 14px 16px;
+    font-size: 1rem;
+    font-weight: 600;
+    border-radius: 14px;
+    border: none;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .card:not(.app) button { display: block; width: 100%; margin-bottom: 12px; }
+  button.primary { background: #34c759; color: #fff; }
+  button.secondary { background: #f2f2f7; color: #1c1c1e; border: 1px solid #d1d1d6; }
+  button.icon { padding: 8px 14px; }
+  input[type="password"] {
+    display: block;
+    width: 100%;
+    padding: 14px;
+    font-size: 1.05rem;
+    border-radius: 14px;
+    border: 1px solid #d1d1d6;
+    margin-bottom: 12px;
+    box-sizing: border-box;
+  }
+  .error { color: #ff3b30; font-size: 0.95rem; }
+  .brand { font-size: 0.75rem; color: #a1a1a6; margin-top: 28px; text-align: center; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 20px; }
+  button.tab { flex: 1; background: #f2f2f7; color: #1c1c1e; border: 1px solid #d1d1d6; }
+  button.tab.active { background: #34c759; color: #fff; border-color: #34c759; }
+  .nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 10px 0;
+    border-bottom: 1px solid #e5e5ea;
+  }
+  .row:last-child { border-bottom: none; }
+  .row .who { font-size: 0.9rem; color: #6e6e73; }
+  .lock { color: #ff9500; font-size: 0.85rem; }
+  .yes { color: #34c759; }
+  .no { color: #6e6e73; }
+</style>
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="muted" id="loading">Lade…</div>
+  </div>
+
+<script>
+(function () {
+  const card = document.getElementById("card");
+  const WEEKDAY_NAMES = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+  const MONTH_NAMES = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
+
+  let me = null;
+  let activeTab = "survey";
+  let surveyMonth = null; // { year, month } - month ist 1-12
+  let samplesDate = null; // "YYYY-MM-DD"
+  let adminMonth = null; // { year, month }
+
+  function render(html, appMode) {
+    card.className = appMode ? "card app" : "card";
+    card.innerHTML = html;
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  function pad2(n) { return String(n).padStart(2, "0"); }
+  function todayDateString() {
+    const now = new Date();
+    return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+  }
+  function formatDateString(dateString) {
+    const [y, m, d] = dateString.split("-").map(Number);
+    const date = new Date(y, m - 1, d);
+    return `${WEEKDAY_NAMES[date.getDay()]}, ${d}. ${MONTH_NAMES[m - 1]} ${y}`;
+  }
+  function addDaysToDateString(dateString, days) {
+    const [y, m, d] = dateString.split("-").map(Number);
+    const date = new Date(y, m - 1, d);
+    date.setDate(date.getDate() + days);
+    return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+  }
+  function monthRange(year, month) {
+    const from = `${year}-${pad2(month)}-01`;
+    const lastDay = new Date(year, month, 0).getDate();
+    const to = `${year}-${pad2(month)}-${pad2(lastDay)}`;
+    return { from, to };
+  }
+
+  function renderLogin(errorText) {
+    render(
+      '<h1>Probenfahrt</h1>' +
+      '<p class="muted">Web-Zugang ohne Apple-Gerät</p>' +
+      '<input type="password" id="passwordInput" placeholder="Passwort" autocomplete="current-password" />' +
+      '<button class="primary" id="loginBtn">Anmelden</button>' +
+      (errorText ? '<p class="error">' + escapeHtml(errorText) + '</p>' : '') +
+      '<div class="brand">Probenfahrt</div>',
+      false
+    );
+    const input = document.getElementById("passwordInput");
+    const button = document.getElementById("loginBtn");
+    const submit = function () { login(input.value); };
+    button.addEventListener("click", submit);
+    input.addEventListener("keydown", function (e) { if (e.key === "Enter") submit(); });
+    input.focus();
+  }
+
+  function renderShell(contentHtml) {
+    render(
+      '<div class="topbar">' +
+        '<div><h2>' + escapeHtml(me.name) + '</h2><div class="who">' + escapeHtml(me.abbreviation) + (me.isAdmin ? " · Admin" : "") + '</div></div>' +
+        '<button class="secondary icon" id="logoutBtn">Abmelden</button>' +
+      '</div>' +
+      '<div class="tabs">' +
+        '<button class="tab' + (activeTab === "survey" ? " active" : "") + '" data-tab="survey">Kalender &amp; Umfragen</button>' +
+        '<button class="tab' + (activeTab === "samples" ? " active" : "") + '" data-tab="samples">Proben-Status</button>' +
+        (me.isAdmin ? '<button class="tab' + (activeTab === "admin" ? " active" : "") + '" data-tab="admin">Admin</button>' : '') +
+      '</div>' +
+      '<div id="content">' + contentHtml + '</div>',
+      true
+    );
+    document.getElementById("logoutBtn").addEventListener("click", logout);
+    card.querySelectorAll(".tab").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        activeTab = btn.dataset.tab;
+        if (activeTab === "survey") loadSurveyMonth(surveyMonth.year, surveyMonth.month);
+        else if (activeTab === "samples") loadSamplesDay(samplesDate);
+        else renderAdminTab();
+      });
+    });
+  }
+
+  async function loadSurveyMonth(year, month) {
+    surveyMonth = { year, month };
+    renderShell('<p class="muted">Lade…</p>');
+    const { from, to } = monthRange(year, month);
+    try {
+      // mode=signup (nicht browse) - dieser Tab ist die Umfragen-Ansicht
+      // (Ein-/Austragen), legt also wie SurveysView.swift fehlende
+      // Mo-Do-Tage im gerade angezeigten Monat an.
+      const response = await fetch("/api/survey-days?from=" + from + "&to=" + to + "&mode=signup");
+      if (response.status === 401) { renderLogin(); return; }
+      if (!response.ok) { renderShell('<p class="error">Konnte Umfragen nicht laden.</p>'); return; }
+      const data = await response.json();
+      renderShell(surveyMonthHtml(year, month, data));
+      wireSurveyNav();
+    } catch (e) {
+      renderShell('<p class="error">Verbindung fehlgeschlagen.</p>');
+    }
+  }
+
+  function surveyMonthHtml(year, month, data) {
+    const entriesByDay = {};
+    data.entries.forEach(function (entry) {
+      (entriesByDay[entry.dayID] = entriesByDay[entry.dayID] || []).push(entry);
+    });
+    const days = data.days.slice().sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+    const rows = days.length
+      ? days.map(function (day) {
+          const dayEntries = entriesByDay[day.id] || [];
+          const names = dayEntries
+            .map(function (e) { return escapeHtml(e.abbreviation || e.name || "?"); })
+            .join(", ") || '<span class="muted">niemand eingetragen</span>';
+          const lock = day.isLocked ? '<span class="lock">gesperrt' + (day.lockReason ? ": " + escapeHtml(day.lockReason) : "") + '</span>' : "";
+          const iAmIn = dayEntries.some(function (e) { return e.userID === me.id; });
+          const toggleBtn = day.isLocked
+            ? ""
+            : '<button class="secondary icon signup-toggle" data-day="' + escapeHtml(day.id) + '" data-signed-up="' + iAmIn + '">' + (iAmIn ? "Austragen" : "Eintragen") + '</button>';
+          const lockBtn = me.isAdmin
+            ? '<button class="secondary icon lock-toggle" data-day="' + escapeHtml(day.id) + '" data-locked="' + day.isLocked + '">' + (day.isLocked ? "Entsperren" : "Sperren") + '</button>'
+            : "";
+          return (
+            '<div class="row"><div>' + escapeHtml(formatDateString(day.date)) + (lock ? " · " + lock : "") + '<br><span class="who">' + names + '</span></div>' +
+            '<div>' + toggleBtn + " " + lockBtn + '</div></div>'
+          );
+        }).join("")
+      : '<p class="muted">Für diesen Monat sind noch keine Umfrage-Tage angelegt.</p>';
+    return (
+      '<div class="nav">' +
+        '<button class="secondary icon" id="prevMonthBtn">&larr;</button>' +
+        '<strong>' + MONTH_NAMES[month - 1] + " " + year + '</strong>' +
+        '<button class="secondary icon" id="nextMonthBtn">&rarr;</button>' +
+      '</div>' +
+      rows
+    );
+  }
+
+  function wireSurveyNav() {
+    document.getElementById("prevMonthBtn").addEventListener("click", function () {
+      const m = surveyMonth.month === 1 ? 12 : surveyMonth.month - 1;
+      const y = surveyMonth.month === 1 ? surveyMonth.year - 1 : surveyMonth.year;
+      loadSurveyMonth(y, m);
+    });
+    document.getElementById("nextMonthBtn").addEventListener("click", function () {
+      const m = surveyMonth.month === 12 ? 1 : surveyMonth.month + 1;
+      const y = surveyMonth.month === 12 ? surveyMonth.year + 1 : surveyMonth.year;
+      loadSurveyMonth(y, m);
+    });
+    card.querySelectorAll(".signup-toggle").forEach(function (btn) {
+      btn.addEventListener("click", function () { toggleSignup(btn.dataset.day, btn.dataset.signedUp === "true"); });
+    });
+    card.querySelectorAll(".lock-toggle").forEach(function (btn) {
+      btn.addEventListener("click", function () { toggleLock(btn.dataset.day, btn.dataset.locked === "true"); });
+    });
+  }
+
+  async function toggleSignup(dayID, currentlySignedUp) {
+    try {
+      const response = await fetch("/api/survey-entries", {
+        method: currentlySignedUp ? "DELETE" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dayID: dayID })
+      });
+      if (response.status === 401) { renderLogin(); return; }
+      if (!response.ok) {
+        const data = await response.json().catch(function () { return {}; });
+        alert(data.error || "Konnte nicht gespeichert werden.");
+        return;
+      }
+      loadSurveyMonth(surveyMonth.year, surveyMonth.month);
+    } catch (e) {
+      alert("Verbindung fehlgeschlagen.");
+    }
+  }
+
+  async function toggleLock(dayID, currentlyLocked) {
+    let reason = "";
+    if (!currentlyLocked) {
+      reason = window.prompt("Grund für die Sperre (optional):", "") || "";
+    }
+    try {
+      const response = await fetch("/api/survey-days/" + encodeURIComponent(dayID) + "/lock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ locked: !currentlyLocked, reason: reason })
+      });
+      if (response.status === 401) { renderLogin(); return; }
+      if (!response.ok) {
+        const data = await response.json().catch(function () { return {}; });
+        alert(data.error || "Konnte nicht gespeichert werden.");
+        return;
+      }
+      loadSurveyMonth(surveyMonth.year, surveyMonth.month);
+    } catch (e) {
+      alert("Verbindung fehlgeschlagen.");
+    }
+  }
+
+  async function loadSamplesDay(dateString) {
+    samplesDate = dateString;
+    renderShell('<p class="muted">Lade…</p>');
+    try {
+      const response = await fetch("/api/samples?date=" + dateString);
+      if (response.status === 401) { renderLogin(); return; }
+      if (!response.ok) { renderShell('<p class="error">Konnte Proben-Status nicht laden.</p>'); return; }
+      const data = await response.json();
+      renderShell(samplesDayHtml(data));
+      wireSamplesNav();
+    } catch (e) {
+      renderShell('<p class="error">Verbindung fehlgeschlagen.</p>');
+    }
+  }
+
+  function samplesDayHtml(data) {
+    const rows = data.items.length
+      ? data.items.map(function (item) {
+          const status = item.hasSamples ? '<span class="yes">Proben vorhanden</span>' : '<span class="no">Keine Proben</span>';
+          return '<div class="row"><div>' + escapeHtml(item.name) + '</div><div>' + status + '</div></div>';
+        }).join("")
+      : '<p class="muted">Keine Meldungen an diesem Tag.</p>';
+    return (
+      '<div class="nav">' +
+        '<button class="secondary icon" id="prevDayBtn">&larr;</button>' +
+        '<strong>' + escapeHtml(formatDateString(data.date)) + '</strong>' +
+        '<button class="secondary icon" id="nextDayBtn">&rarr;</button>' +
+      '</div>' +
+      (data.date !== todayDateString() ? '<button class="secondary" id="todayBtn">Heute</button>' : '') +
+      rows
+    );
+  }
+
+  function wireSamplesNav() {
+    document.getElementById("prevDayBtn").addEventListener("click", function () { loadSamplesDay(addDaysToDateString(samplesDate, -1)); });
+    document.getElementById("nextDayBtn").addEventListener("click", function () { loadSamplesDay(addDaysToDateString(samplesDate, 1)); });
+    const todayBtn = document.getElementById("todayBtn");
+    if (todayBtn) todayBtn.addEventListener("click", function () { loadSamplesDay(todayDateString()); });
+  }
+
+  // MARK: - Admin-PDF-Auswertungen
+
+  function renderAdminTab() {
+    if (!adminMonth) {
+      const now = new Date();
+      adminMonth = { year: now.getFullYear(), month: now.getMonth() + 1 };
+    }
+    renderShell(adminTabHtml());
+    wireAdminNav();
+  }
+
+  function adminTabHtml() {
+    return (
+      '<div class="nav">' +
+        '<button class="secondary icon" id="prevAdminMonthBtn">&larr;</button>' +
+        '<strong>' + MONTH_NAMES[adminMonth.month - 1] + " " + adminMonth.year + '</strong>' +
+        '<button class="secondary icon" id="nextAdminMonthBtn">&rarr;</button>' +
+      '</div>' +
+      '<button class="primary" id="downloadTripsBtn">Fahrten-Auswertung (PDF)</button>' +
+      '<button class="secondary" id="downloadSamplesBtn">Proben-Auswertung (PDF)</button>' +
+      '<p class="error" id="adminError" style="display:none"></p>'
+    );
+  }
+
+  function wireAdminNav() {
+    document.getElementById("prevAdminMonthBtn").addEventListener("click", function () {
+      adminMonth = adminMonth.month === 1 ? { year: adminMonth.year - 1, month: 12 } : { year: adminMonth.year, month: adminMonth.month - 1 };
+      renderShell(adminTabHtml());
+      wireAdminNav();
+    });
+    document.getElementById("nextAdminMonthBtn").addEventListener("click", function () {
+      adminMonth = adminMonth.month === 12 ? { year: adminMonth.year + 1, month: 1 } : { year: adminMonth.year, month: adminMonth.month + 1 };
+      renderShell(adminTabHtml());
+      wireAdminNav();
+    });
+    document.getElementById("downloadTripsBtn").addEventListener("click", function () {
+      downloadReport(
+        "/api/reports/monthly",
+        "Fahrten-Auswertung " + MONTH_NAMES[adminMonth.month - 1] + " " + adminMonth.year,
+        function (line) { return line.userName + ": " + line.tripCount + " " + (line.tripCount === 1 ? "Fahrt" : "Fahrten"); },
+        "Keine Fahrten in diesem Monat.",
+        "Fahrten-Auswertung-" + adminMonth.year + "-" + pad2(adminMonth.month) + ".pdf"
+      );
+    });
+    document.getElementById("downloadSamplesBtn").addEventListener("click", function () {
+      downloadReport(
+        "/api/reports/samples",
+        "Proben-Auswertung " + MONTH_NAMES[adminMonth.month - 1] + " " + adminMonth.year,
+        function (line) { return line.locationName + ": " + line.daysWithSamples + " " + (line.daysWithSamples === 1 ? "Tag" : "Tage") + " mit Proben"; },
+        "Keine Proben-Meldungen in diesem Monat.",
+        "Proben-Auswertung-" + adminMonth.year + "-" + pad2(adminMonth.month) + ".pdf"
+      );
+    });
+  }
+
+  async function downloadReport(endpoint, title, formatLine, emptyMessage, filename) {
+    const errorEl = document.getElementById("adminError");
+    errorEl.style.display = "none";
+    try {
+      const response = await fetch(endpoint + "?year=" + adminMonth.year + "&month=" + adminMonth.month);
+      if (response.status === 401) { renderLogin(); return; }
+      if (response.status === 403) { errorEl.textContent = "Nur für Admins."; errorEl.style.display = "block"; return; }
+      if (!response.ok) { errorEl.textContent = "Konnte Auswertung nicht laden."; errorEl.style.display = "block"; return; }
+      const data = await response.json();
+      const bytes = buildSimplePdfBytes(title, data.lines.map(formatLine), emptyMessage);
+      const blob = new Blob([bytes], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      errorEl.textContent = "Verbindung fehlgeschlagen.";
+      errorEl.style.display = "block";
+    }
+  }
+
+  /**
+   * Handgeschriebener, minimaler PDF-Writer statt einer vendorten Bibliothek
+   * (pdf-lib o.ä. wäre für "Titel + Zeilenliste auf einer A4-Seite" ein
+   * unverhältnismäßig großer, ungeprüfter Blob) - erzeugt eine einzelne
+   * A4-Seite mit Helvetica/WinAnsiEncoding, gegen echtes pdftotext verifiziert.
+   * Layout absichtlich analog PDFReportRenderer.swift (Titel fett 20pt oben,
+   * Zeilen 14pt ab y=90, Schrittweite 24pt) - keine Paginierung, das native
+   * Original paginiert auch nicht.
+   */
+  function pdfEscapeText(text) {
+    return String(text).replace(/[\\()]/g, function (c) { return "\\" + c; });
+  }
+
+  function latin1BytesFromString(str) {
+    const bytes = new Uint8Array(str.length);
+    for (let i = 0; i < str.length; i++) {
+      const code = str.charCodeAt(i);
+      bytes[i] = code <= 255 ? code : 0x3f; // "?" für nicht darstellbare Zeichen
+    }
+    return bytes;
+  }
+
+  function buildSimplePdfBytes(title, lines, emptyMessage) {
+    const pageWidth = 595.2;
+    const pageHeight = 841.8; // A4 bei 72dpi, wie PDFReportRenderer.swift
+
+    let content = "";
+    content += "BT\n/F2 20 Tf\n1 0 0 1 40 " + (pageHeight - 40 - 16).toFixed(1) + " Tm\n(" + pdfEscapeText(title) + ") Tj\nET\n";
+    let y = pageHeight - 90 - 11.2;
+    const bodyLines = lines.length ? lines : [emptyMessage];
+    bodyLines.forEach(function (line) {
+      content += "BT\n/F1 14 Tf\n1 0 0 1 40 " + y.toFixed(1) + " Tm\n(" + pdfEscapeText(line) + ") Tj\nET\n";
+      y -= 24;
+    });
+
+    const objects = [
+      "<< /Type /Catalog /Pages 2 0 R >>",
+      "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+      "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + pageWidth.toFixed(1) + " " + pageHeight.toFixed(1) + "] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>",
+      "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+      "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>",
+      "<< /Length " + content.length + " >>\nstream\n" + content + "endstream",
+    ];
+
+    let out = "%PDF-1.4\n";
+    const offsets = [0];
+    objects.forEach(function (body, i) {
+      offsets[i + 1] = out.length;
+      out += (i + 1) + " 0 obj\n" + body + "\nendobj\n";
+    });
+
+    const xrefOffset = out.length;
+    out += "xref\n0 " + (objects.length + 1) + "\n";
+    out += "0000000000 65535 f \n";
+    for (let i = 1; i <= objects.length; i++) {
+      out += String(offsets[i]).padStart(10, "0") + " 00000 n \n";
+    }
+    out += "trailer\n<< /Size " + (objects.length + 1) + " /Root 1 0 R >>\nstartxref\n" + xrefOffset + "\n%%EOF";
+
+    return latin1BytesFromString(out);
+  }
+
+  async function login(password) {
+    if (!password) { renderLogin("Bitte Passwort eingeben."); return; }
+    try {
+      const response = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: password })
+      });
+      if (response.status === 401) {
+        renderLogin("Falsches Passwort.");
+        return;
+      }
+      if (!response.ok) {
+        renderLogin("Verbindung fehlgeschlagen. Bitte erneut versuchen.");
+        return;
+      }
+      await checkSession();
+    } catch (e) {
+      renderLogin("Verbindung fehlgeschlagen. Bitte erneut versuchen.");
+    }
+  }
+
+  async function logout() {
+    try {
+      await fetch("/api/logout", { method: "POST" });
+    } catch (e) {
+      // Cookie ablaufen lassen reicht notfalls auch - Login-Screen zeigen
+      // wir trotzdem, damit niemand auf einem fremden Gerät angemeldet bleibt.
+    }
+    me = null;
+    renderLogin();
+  }
+
+  async function checkSession() {
+    try {
+      const response = await fetch("/api/me");
+      if (response.status === 401) {
+        renderLogin();
+        return;
+      }
+      if (!response.ok) {
+        render('<h1>Probenfahrt</h1><p class="error">Verbindung fehlgeschlagen. Bitte Seite neu laden.</p>', false);
+        return;
+      }
+      me = await response.json();
+      const now = new Date();
+      surveyMonth = { year: now.getFullYear(), month: now.getMonth() + 1 };
+      samplesDate = todayDateString();
+      activeTab = "survey";
+      loadSurveyMonth(surveyMonth.year, surveyMonth.month);
+    } catch (e) {
+      render('<h1>Probenfahrt</h1><p class="error">Verbindung fehlgeschlagen. Bitte Internetverbindung prüfen und die Seite neu laden.</p>', false);
+    }
+  }
+
+  checkSession();
+})();
+</script>
+</body>
+</html>
