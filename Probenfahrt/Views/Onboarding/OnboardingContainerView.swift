@@ -193,7 +193,7 @@ struct OnboardingContainerView: View {
             pendingGroupID = result.group.id
             step = result.accountKind == .pharmacy ? .pharmacyIdentity : .labIdentity
         } catch {
-            errorMessage = "Etwas ist schiefgelaufen. Bitte erneut versuchen."
+            errorMessage = "Etwas ist schiefgelaufen: \(error.localizedDescription)"
         }
     }
 
@@ -220,7 +220,7 @@ struct OnboardingContainerView: View {
             session.setCurrentUser(id: user.id)
             devMode.isActive = true
         } catch {
-            errorMessage = "Etwas ist schiefgelaufen. Bitte erneut versuchen."
+            errorMessage = "Etwas ist schiefgelaufen: \(error.localizedDescription)"
         }
     }
 
@@ -240,7 +240,7 @@ struct OnboardingContainerView: View {
             let user = try await userRepository.createUser(name: trimmedName, abbreviation: trimmedAbbreviation, groupID: groupID)
             session.setCurrentUser(id: user.id)
         } catch {
-            errorMessage = "Etwas ist schiefgelaufen. Bitte erneut versuchen."
+            errorMessage = "Etwas ist schiefgelaufen: \(error.localizedDescription)"
         }
     }
 
@@ -256,7 +256,7 @@ struct OnboardingContainerView: View {
             _ = try await samplesRepository.findOrCreateLocation(ownerUserID: user.id, groupID: groupID, name: trimmedName)
             session.setCurrentUser(id: user.id)
         } catch {
-            errorMessage = "Etwas ist schiefgelaufen. Bitte erneut versuchen."
+            errorMessage = "Etwas ist schiefgelaufen: \(error.localizedDescription)"
         }
     }
 }

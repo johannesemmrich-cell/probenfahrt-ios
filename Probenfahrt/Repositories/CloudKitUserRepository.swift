@@ -153,7 +153,11 @@ final class CloudKitUserRepository: UserRepository {
     }
 
     func setWebPassword(_ password: String?, for id: UUID) async throws {
-        guard let record = try? await database.record(for: Self.userRecordID(id: id)) else { return }
+        // Kein try? auf den Fetch mehr - ein echter Fehler (z.B. fehlende
+        // Write-Berechtigung) wurde hier bisher stillschweigend als "Nutzer
+        // nicht gefunden" behandelt und verschluckt (von einer unabhängigen
+        // Verifikation am 2026-09-15 gefunden).
+        let record = try await database.record(for: Self.userRecordID(id: id))
         let trimmed = password?.trimmingCharacters(in: .whitespacesAndNewlines)
         let hash = trimmed?.isEmpty == false ? WebPasswordHashing.hash(trimmed!) : nil
         record[UserField.webPasswordHash] = hash as CKRecordValue?

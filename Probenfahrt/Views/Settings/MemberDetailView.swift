@@ -90,13 +90,16 @@ struct MemberDetailView: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .onChange(of: webPassword) { hasEditedWebPassword = true }
-                        // onDisappear only (not also onSubmit, which only
-                        // fires on the keyboard's Return key) - covers every
-                        // in-app way of leaving this screen with exactly one
-                        // save, avoiding two unsequenced writes racing each
-                        // other. Doesn't cover backgrounding/force-quitting
-                        // the app while this screen stays mounted - the
-                        // typed value is lost in that case too.
+                        // onSubmit (Return-Taste) UND onDisappear, nicht nur
+                        // Disappear wie vorher - ein Fehler beim Speichern
+                        // (z.B. fehlende Berechtigung) muss sichtbar sein,
+                        // während der Screen noch offen ist, sonst verpufft
+                        // die Fehlermeldung auf einem schon verlassenen
+                        // Screen. Kein Doppel-Save-Risiko: hasEditedWebPassword
+                        // wird nach einem erfolgreichen Save zurückgesetzt,
+                        // ein zweiter Aufruf (onDisappear danach) ist dann ein
+                        // No-Op.
+                        .onSubmit { Task { await saveWebPassword() } }
                         .onDisappear { Task { await saveWebPassword() } }
                     if let webPasswordErrorMessage {
                         Text(webPasswordErrorMessage).font(.footnote).foregroundStyle(.red)
@@ -235,16 +238,25 @@ struct MemberDetailView: View {
         guard hasEditedWebPassword else { return }
         webPasswordErrorMessage = nil
         let trimmed = webPassword.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty {
-            if let taken = try? await userRepository.isWebPasswordTaken(trimmed, excluding: user.id), taken {
-                webPasswordErrorMessage = "Dieses Passwort ist schon einem anderen Mitglied zugewiesen."
-                return
+        do {
+            if !trimmed.isEmpty {
+                if try await userRepository.isWebPasswordTaken(trimmed, excluding: user.id) {
+                    webPasswordErrorMessage = "Dieses Passwort ist schon einem anderen Mitglied zugewiesen."
+                    return
+                }
             }
+            try await userRepository.setWebPassword(trimmed, for: user.id)
+            webPasswordIsSet = !trimmed.isEmpty
+            hasEditedWebPassword = false
+            webPassword = ""
+        } catch {
+            // Vorher try? auf beiden Aufrufen - ein echter CloudKit-Fehler
+            // (z.B. fehlende Write-Berechtigung, nicht als Queryable
+            // markiertes Feld) sah dadurch wie ein stilles Nichtstun statt
+            // eines Fehlers aus (von einer unabhängigen Verifikation am
+            // 2026-09-15 gefunden).
+            webPasswordErrorMessage = "Konnte nicht gespeichert werden: \(error.localizedDescription)"
         }
-        try? await userRepository.setWebPassword(trimmed, for: user.id)
-        webPasswordIsSet = !trimmed.isEmpty
-        hasEditedWebPassword = false
-        webPassword = ""
     }
 
     private func setViceAdmin(_ isOn: Bool) async {
