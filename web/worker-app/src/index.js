@@ -185,6 +185,70 @@ async function attachRefreshedSession(response, env, session) {
   return response;
 }
 
+/**
+ * Gleicher Hash wie DevPassword.swift (SHA-256, ungesalzen, das Passwort
+ * selbst wird nirgends gespeichert) - Pendant zum Dev-Mode-Bypass im
+ * Onboarding: dasselbe Passwort loggt hier direkt als "Entwickler"/"DEV"
+ * in der LABOR2026-Testgruppe ein, ohne eigenes Web-Passwort nötig zu haben.
+ */
+const DEV_PASSWORD_HASH = "5187f60ecb928fbbdfd417d75bda193f441dce05a2309f7494770a584f59e27e";
+const DEV_TEST_GROUP_JOIN_CODE = "labor2026"; // MockDataSeeder.testGroupJoinCode, lowercased wie beim normalen Beitritt
+
+async function matchesDevPassword(input) {
+  const trimmed = (input || "").trim();
+  if (!trimmed) return false;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(trimmed));
+  const hex = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  return hex === DEV_PASSWORD_HASH;
+}
+
+async function findGroupIDByJoinCode(env, joinCode) {
+  const body = {
+    query: {
+      recordType: "TeamGroup",
+      filterBy: [
+        { fieldName: "joinCode", comparator: "EQUALS", fieldValue: { value: joinCode, type: "STRING" } },
+      ],
+    },
+  };
+  const result = await signAndPost(env, databasePath(env, "records/query"), body);
+  const records = result.records || [];
+  if (!records.length || !records[0].fields) return null;
+  return records[0].fields.groupID ? records[0].fields.groupID.value : null;
+}
+
+/**
+ * abbreviation ist bei User NICHT Queryable (nur groupID/webPasswordEncrypted,
+ * siehe README) - deshalb wie sonst auch: Gruppe komplett holen und hier
+ * filtern statt gezielt abzufragen.
+ */
+async function findOrCreateDevUser(env) {
+  const groupID = await findGroupIDByJoinCode(env, DEV_TEST_GROUP_JOIN_CODE);
+  if (!groupID) return null;
+
+  const users = await findUsersForGroup(env, groupID);
+  const existing = users.find((u) => u.abbreviation.toUpperCase() === "DEV");
+  if (existing) {
+    return { id: existing.id, groupID: groupID, role: existing.role, name: existing.name, abbreviation: existing.abbreviation };
+  }
+
+  const userID = crypto.randomUUID();
+  const fields = {
+    userID: { value: userID, type: "STRING" },
+    name: { value: "Entwickler", type: "STRING" },
+    abbreviation: { value: "DEV", type: "STRING" },
+    role: { value: "member", type: "STRING" },
+    accountKind: { value: "labTeam", type: "STRING" },
+    groupID: { value: groupID, type: "STRING" },
+    createdAt: { value: Date.now(), type: "TIMESTAMP" },
+    webPasswordEncrypted: { value: "", type: "STRING" },
+  };
+  await signAndPost(env, databasePath(env, "records/modify"), {
+    operations: [{ operationType: "create", record: { recordName: `user-${userID}`, recordType: "User", fields } }],
+  });
+  return { id: userID, groupID: groupID, role: "member", name: "Entwickler", abbreviation: "DEV" };
+}
+
 async function handlePostLogin(request, env) {
   let password;
   try {
@@ -196,6 +260,17 @@ async function handlePostLogin(request, env) {
   }
 
   try {
+    if (await matchesDevPassword(password)) {
+      const devUser = await findOrCreateDevUser(env);
+      if (!devUser) return jsonResponse(401, { error: "Dev-Gruppe nicht gefunden." });
+      const cookie = await createSessionCookie(env, devUser);
+      return jsonResponse(
+        200,
+        { name: devUser.name, abbreviation: devUser.abbreviation, role: devUser.role },
+        { "Set-Cookie": cookie }
+      );
+    }
+
     const encrypted = await encryptWebPassword(env, password);
     const user = await findUserByEncryptedPassword(env, encrypted);
     if (!user || !user.id) {
