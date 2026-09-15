@@ -22,8 +22,8 @@
     body { background: #000; color: #f2f2f7; }
     .card { background: #1c1c1e; }
     .muted { color: #8e8e93; }
-    button.secondary, button.tab { background: #2c2c2e; color: #f2f2f7; border-color: #3a3a3c; }
-    button.tab.active { background: #34c759; color: #fff; }
+    button.secondary, button.tab, button.cal-mode-btn { background: #2c2c2e; color: #f2f2f7; border-color: #3a3a3c; }
+    button.tab.active, button.cal-mode-btn.active { background: #34c759; color: #fff; }
     input[type="password"], input[type="text"] { background: #1c1c1e; color: #f2f2f7; border-color: #3a3a3c; }
     .row { border-color: #3a3a3c; }
   }
@@ -91,6 +91,16 @@
   .warn { color: #ff3b30; }
   .survey-covered { background: rgba(52,199,89,0.12); border-radius: 8px; padding-left: 6px; padding-right: 6px; }
   .current-badge { background: #34c759; color: #fff; font-size: 0.7rem; padding: 2px 8px; border-radius: 8px; font-weight: 600; }
+  button.cal-mode-btn { flex: 1; background: #f2f2f7; color: #1c1c1e; border: 1px solid #d1d1d6; }
+  button.cal-mode-btn.active { background: #34c759; color: #fff; border-color: #34c759; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-top: 8px; }
+  .cal-head { text-align: center; font-size: 0.75rem; color: #6e6e73; padding: 4px 0; }
+  .cal-cell { aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 8px; font-size: 0.8rem; }
+  .cal-outside { opacity: 0.35; }
+  .cal-today { background: rgba(255,204,0,0.22); }
+  .cal-daynum { font-weight: 600; }
+  .cal-initials { font-size: 0.6rem; color: #6e6e73; }
+  .cal-lock { font-size: 0.7rem; }
   .legal-links { text-align: center; margin-top: 16px; font-size: 0.75rem; }
   .legal-links a { color: #a1a1a6; text-decoration: none; }
   .legal-links a:hover { text-decoration: underline; }
@@ -112,6 +122,8 @@
   let activeTab = "survey";
   let surveyReferenceDate = null; // "YYYY-MM-DD" - Basis fürs 2-Wochen-Fenster
   let surveyView = "current"; // "current" | "past"
+  let calendarViewMode = "month"; // "month" | "week"
+  let calendarReferenceDate = null; // "YYYY-MM-DD" (im Monatsmodus immer Tag 1)
   let samplesDate = null; // "YYYY-MM-DD"
   let adminMonth = null; // { year, month }
   let settingsView = "root"; // "root" | "members" | "member" | "pharmacies" | "pharmacy"
@@ -178,6 +190,7 @@
       '</div>' +
       '<div class="tabs">' +
         '<button class="tab' + (activeTab === "survey" ? " active" : "") + '" data-tab="survey">Umfragen</button>' +
+        '<button class="tab' + (activeTab === "calendar" ? " active" : "") + '" data-tab="calendar">Kalender</button>' +
         '<button class="tab' + (activeTab === "samples" ? " active" : "") + '" data-tab="samples">Proben</button>' +
         '<button class="tab' + (activeTab === "settings" ? " active" : "") + '" data-tab="settings">Einstellungen</button>' +
       '</div>' +
@@ -189,6 +202,7 @@
       btn.addEventListener("click", function () {
         activeTab = btn.dataset.tab;
         if (activeTab === "survey") loadCurrentSurveys();
+        else if (activeTab === "calendar") loadCalendarTab();
         else if (activeTab === "samples") loadSamplesDay(samplesDate);
         else { settingsView = "root"; loadSettingsRoot(); }
       });
@@ -432,6 +446,172 @@
     } catch (e) {
       alert("Verbindung fehlgeschlagen.");
     }
+  }
+
+  // MARK: - Kalender (rein lesend, Monat-/Wochen-Grid, JS-Port von
+  // CalendarView.swift/MonthGridView.swift/WeekListView.swift - im
+  // Gegensatz zu Umfragen ohne jede Klick-Interaktion)
+
+  function isoWeekNumber(dateString) {
+    const [y, m, d] = dateString.split("-").map(Number);
+    const date = new Date(Date.UTC(y, m - 1, d));
+    const dayNum = (date.getUTCDay() + 6) % 7;
+    date.setUTCDate(date.getUTCDate() - dayNum + 3);
+    const firstThursday = new Date(Date.UTC(date.getUTCFullYear(), 0, 4));
+    const firstDayNum = (firstThursday.getUTCDay() + 6) % 7;
+    firstThursday.setUTCDate(firstThursday.getUTCDate() - firstDayNum + 3);
+    return 1 + Math.round((date - firstThursday) / (7 * 24 * 60 * 60 * 1000));
+  }
+
+  function shiftMonthDateString(dateString, delta) {
+    const [y, m] = dateString.split("-").map(Number);
+    let newMonth = m + delta;
+    let newYear = y;
+    while (newMonth > 12) { newMonth -= 12; newYear++; }
+    while (newMonth < 1) { newMonth += 12; newYear--; }
+    return `${newYear}-${pad2(newMonth)}-01`;
+  }
+
+  function monthGridWeeks(year, month) {
+    const firstOfMonth = `${year}-${pad2(month)}-01`;
+    const leadingOffset = (weekdayOf(firstOfMonth) + 6) % 7; // Mo->0
+    const gridStart = addDaysToDateString(firstOfMonth, -leadingOffset);
+
+    const lastDayNum = new Date(year, month, 0).getDate();
+    const lastOfMonth = `${year}-${pad2(month)}-${pad2(lastDayNum)}`;
+    const trailingOffset = 6 - ((weekdayOf(lastOfMonth) + 6) % 7);
+    const gridEnd = addDaysToDateString(lastOfMonth, trailingOffset);
+
+    const weeks = [];
+    let cursor = gridStart;
+    while (cursor <= gridEnd) {
+      const week = [];
+      for (let i = 0; i < 7; i++) { week.push(cursor); cursor = addDaysToDateString(cursor, 1); }
+      weeks.push(week);
+    }
+    return weeks;
+  }
+
+  async function loadCalendarTab() {
+    activeTab = "calendar";
+    renderShell('<p class="muted">Lade…</p>');
+    const [y, m] = calendarReferenceDate.split("-").map(Number);
+    let from, to, navLabel;
+    if (calendarViewMode === "month") {
+      const range = monthRange(y, m);
+      from = range.from; to = range.to;
+      navLabel = MONTH_NAMES[m - 1] + " " + y;
+    } else {
+      const weekStart = mondayStartOfWeekDateString(calendarReferenceDate);
+      from = weekStart;
+      to = addDaysToDateString(weekStart, 3);
+      navLabel = "KW " + isoWeekNumber(calendarReferenceDate);
+    }
+    try {
+      // mode=browse - der Kalender-Tab legt nie Tage an, reines Durchblättern
+      // (auch in die Zukunft) darf keine Seiteneffekte haben.
+      const response = await fetch("/api/survey-days?from=" + from + "&to=" + to + "&mode=browse");
+      if (response.status === 401) { renderLogin(); return; }
+      if (!response.ok) { renderShell('<p class="error">Konnte Kalender nicht laden.</p>'); return; }
+      const data = await response.json();
+      const body = calendarViewMode === "month" ? calendarMonthGridHtml(y, m, data) : calendarWeekListHtml(data, from);
+      renderShell(calendarShellHtml(navLabel, body));
+      wireCalendarNav();
+    } catch (e) {
+      renderShell('<p class="error">Verbindung fehlgeschlagen.</p>');
+    }
+  }
+
+  function calendarShellHtml(navLabel, bodyHtml) {
+    return (
+      '<div class="tabs">' +
+        '<button class="cal-mode-btn' + (calendarViewMode === "month" ? " active" : "") + '" id="calModeMonthBtn">Monat</button>' +
+        '<button class="cal-mode-btn' + (calendarViewMode === "week" ? " active" : "") + '" id="calModeWeekBtn">Woche</button>' +
+      '</div>' +
+      '<div class="nav">' +
+        '<button class="secondary icon" id="prevCalBtn">&larr;</button>' +
+        '<strong>' + navLabel + '</strong>' +
+        '<button class="secondary icon" id="nextCalBtn">&rarr;</button>' +
+      '</div>' +
+      bodyHtml
+    );
+  }
+
+  function calendarMonthGridHtml(year, month, data) {
+    const dayByDate = {};
+    data.days.forEach(function (day) { dayByDate[day.date] = day; });
+    const entriesByDay = {};
+    data.entries.forEach(function (entry) { (entriesByDay[entry.dayID] = entriesByDay[entry.dayID] || []).push(entry); });
+
+    const today = todayDateString();
+    const weeks = monthGridWeeks(year, month);
+    const head = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map(function (w) { return '<div class="cal-head">' + w + '</div>'; }).join("");
+    const cells = weeks.map(function (week) {
+      return week.map(function (dateString) {
+        const [, cellMonth, cellDay] = dateString.split("-").map(Number);
+        const inMonth = cellMonth === month;
+        const weekdayIdx = weekdayOf(dateString); // 0=So...6=Sa
+        const isSurveyDay = weekdayIdx >= 1 && weekdayIdx <= 4; // Mo-Do
+        let content = "";
+        if (isSurveyDay && inMonth) {
+          const day = dayByDate[dateString];
+          if (day) {
+            if (day.isLocked) {
+              content = '<div class="cal-lock">&#128274;</div>';
+            } else {
+              const entries = (entriesByDay[day.id] || []).slice(0, 2);
+              const initials = entries.map(function (e) { return escapeHtml(e.abbreviation || "?"); }).join(",");
+              content = initials ? '<div class="cal-initials">' + initials + '</div>' : "";
+            }
+          }
+        }
+        const classes = "cal-cell" + (inMonth ? "" : " cal-outside") + (dateString === today ? " cal-today" : "");
+        return '<div class="' + classes + '"><div class="cal-daynum">' + cellDay + '</div>' + content + '</div>';
+      }).join("");
+    }).join("");
+
+    return '<div class="cal-grid">' + head + cells + '</div>';
+  }
+
+  function calendarWeekListHtml(data, weekStart) {
+    const dayByDate = {};
+    data.days.forEach(function (day) { dayByDate[day.date] = day; });
+    const entriesByDay = {};
+    data.entries.forEach(function (entry) { (entriesByDay[entry.dayID] = entriesByDay[entry.dayID] || []).push(entry); });
+
+    const days = [0, 1, 2, 3].map(function (i) { return addDaysToDateString(weekStart, i); });
+    return days.map(function (dateString) {
+      const day = dayByDate[dateString];
+      let body;
+      if (!day) {
+        body = '<span class="muted">nicht angelegt</span>';
+      } else if (day.isLocked) {
+        body = '<span class="lock">gesperrt' + (day.lockReason ? ": " + escapeHtml(day.lockReason) : "") + '</span>';
+      } else {
+        const entries = (entriesByDay[day.id] || []).slice().sort(function (a, b) { return (a.name || "").localeCompare(b.name || "", "de"); });
+        body = entries.length
+          ? entries.map(function (e) { return escapeHtml(e.name || e.abbreviation || "?"); }).join(", ")
+          : '<span class="muted">niemand eingetragen</span>';
+      }
+      return '<div class="row"><div>' + formatShortDate(dateString) + '</div><div class="who">' + body + '</div></div>';
+    }).join("");
+  }
+
+  function wireCalendarNav() {
+    document.getElementById("calModeMonthBtn").addEventListener("click", function () {
+      if (calendarViewMode !== "month") { calendarViewMode = "month"; loadCalendarTab(); }
+    });
+    document.getElementById("calModeWeekBtn").addEventListener("click", function () {
+      if (calendarViewMode !== "week") { calendarViewMode = "week"; loadCalendarTab(); }
+    });
+    document.getElementById("prevCalBtn").addEventListener("click", function () {
+      calendarReferenceDate = calendarViewMode === "month" ? shiftMonthDateString(calendarReferenceDate, -1) : addDaysToDateString(calendarReferenceDate, -7);
+      loadCalendarTab();
+    });
+    document.getElementById("nextCalBtn").addEventListener("click", function () {
+      calendarReferenceDate = calendarViewMode === "month" ? shiftMonthDateString(calendarReferenceDate, 1) : addDaysToDateString(calendarReferenceDate, 7);
+      loadCalendarTab();
+    });
   }
 
   async function loadSamplesDay(dateString) {
@@ -1059,6 +1239,7 @@
       }
       me = await response.json();
       surveyReferenceDate = todayDateString();
+      calendarReferenceDate = todayDateString();
       samplesDate = todayDateString();
       activeTab = "survey";
       loadCurrentSurveys();
