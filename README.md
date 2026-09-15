@@ -284,27 +284,42 @@ großer, kaum prüfbarer Blob für diesen einfachen Fall), baut
 (Helvetica/WinAnsiEncoding, gegen `pdftotext` verifiziert) — passt zum
 bisherigen Null-Abhängigkeiten-Stil der Seite.
 
-**Stand 2026-09-15:** Alle laut Plan vorgesehenen Endpunkte sind gebaut:
-Login/Session (`/api/login`, `/api/logout`, `/api/me`), Umfragen/Kalender
-lesend + schreibend (`GET /api/survey-days` mit `mode=browse`/`mode=signup`,
-`POST`/`DELETE /api/survey-entries` fürs Ein-/Austragen,
-`POST /api/survey-days/:id/lock` fürs Sperren/Entsperren), Proben-Status
-lesend (`GET /api/samples`) und die Admin-PDF-Endpunkte
-(`/api/reports/monthly`/`/api/reports/samples`, inkl. Download-Button im
-Frontend). Die Vergangenheits-Regel (nur Admins dürfen vergangene Tage
-bearbeiten) ist dabei erstmals im ganzen Projekt echt serverseitig
-durchgesetzt, nicht nur im Client-UI wie bisher überall sonst (BACKLOG #2).
+**Stand 2026-09-15, live und vollständig:** Volle Funktions-Parität zur
+nativen App erreicht (außer Team-Chat) — vier Tabs wie in `RootTabView`:
 
-Alles lokal gegen `wrangler dev` getestet (Routing/Auth-Gating/
-Rollen-Gating/Admin-für-andere-Gating/Fehlerbehandlung, inkl. eines dabei
-gefundenen und gefixten Bugs: ein manipuliertes Session-Cookie crashte mit
-500 statt sauber 401 zurückzugeben) — noch **nicht** live deployed, noch
-kein echter End-zu-Ende-Test gegen reales CloudKit (fehlende/falsch
-konfigurierte Queryable/Sortable-Felder im Dashboard fallen erst dabei
-auf). Frontend deckt bewusst nur "eigenes Ein-/Austragen" ab, nicht das
-Admin-"für andere eintragen" (Backend unterstützt es, UI dafür fehlt noch)
-— ebenso fehlt eine UI für Mitglieder-/Apotheken-Verwaltung (bewusst
-außerhalb des Scopes, siehe oben).
+- **Umfragen** — rollierendes 2-Wochen-Fenster (JS-Port von
+  `SurveyWeekWindow.swift`), Ein-/Austragen, Admin-"Verwalten"-Panel für
+  andere Mitglieder an gesperrten/vergangenen Tagen, Tage sperren/
+  entsperren, "Vergangene Umfragen" (letzte 8 Wochen, rein lesend).
+- **Kalender** — komplett separat vom Umfragen-Tab, rein lesend
+  (Monats-Grid + Wochen-Liste, `mode=browse`, nie Seiteneffekte).
+- **Proben** — team-weite Proben-Status-Ansicht.
+- **Einstellungen** — eigenes Profil (Name immer, Kürzel nur Haupt-Admin,
+  serverseitig durchgesetzt), Admin-Bereich mit PDF-Export
+  (`/api/reports/monthly`/`/api/reports/samples`), **Mitglieder verwalten**
+  (Fahrten-Statistik, Web-Zugang-Passwort einsehen/ändern, Vice-Admin-Rolle,
+  aus Gruppe entfernen inkl. Last-Admin-Schutz) und **Apotheken verwalten**
+  (anlegen, Check-in-Link als Text mit Kopieren-Button, manuell melden,
+  löschen).
+
+Das Web-Passwort wird **umkehrbar verschlüsselt** (AES-256-GCM,
+`User.webPasswordEncrypted`), nicht gehasht — ein Admin kann es sich in
+`MemberDetailView` wieder anzeigen lassen (siehe BACKLOG #5). Die
+Vergangenheits-Regel (nur Admins dürfen vergangene Umfrage-Tage bearbeiten)
+ist dabei die erste echte serverseitige Autorisierung im ganzen Projekt,
+nicht nur Client-UI wie bisher überall sonst (BACKLOG #2).
+
+Alles lokal gegen `wrangler dev` getestet (Routing/Auth-/Rollen-Gating,
+Fehlerbehandlung) und live deployed — **aber**: `webPasswordEncrypted`
+muss im CloudKit Dashboard erst wieder manuell als Feld an `User` angelegt
++ Queryable markiert werden (gleicher Schritt wie beim vorherigen
+`webPasswordHash`, siehe CloudKit-Setup Punkt 4 oben), bevor der Login
+gegen echtes CloudKit überhaupt wieder funktioniert — noch nicht gemacht,
+noch kein echter Klickpfad-Test der neuen Mitglieder-/Apotheken-/Kalender-
+Funktionen gegen reale Daten. Bewusst nicht nachgebaut: Dev-Mode/
+Admin-Vorschau-Debugwerkzeuge, der Admin-Code-Klartext-Screen,
+QR-Code-**Bilder** in "Apotheken verwalten" (nur der Text-Link), Editieren
+von Name/Adresse einer bestehenden Apotheke (gibt's nativ auch nicht).
 
 
 
