@@ -869,6 +869,12 @@
 
   function memberDetailHtml(detail, stats, period) {
     const roleLabel = detail.role === "admin" ? "Haupt-Admin" : detail.role === "viceAdmin" ? "Vice-Admin" : "Mitglied";
+    const abbreviationSection = detail.isFullAdminViewing ? (
+      '<h3>Kürzel</h3>' +
+      '<input type="text" id="memberAbbreviationInput" value="' + escapeHtml(detail.abbreviation) + '" maxlength="4" />' +
+      '<button class="secondary" id="saveMemberAbbreviationBtn">Kürzel speichern</button>' +
+      '<p class="error" id="memberAbbreviationError" style="display:none"></p>'
+    ) : "";
     const passwordSection = detail.isFullAdminViewing ? (
       '<h3>Web-Zugang</h3>' +
       '<input type="text" id="memberPasswordInput" value="' + escapeHtml(detail.webPassword || "") + '" placeholder="Passwort (leer = kein Zugang)" />' +
@@ -892,6 +898,7 @@
         '<button class="secondary icon" id="periodMonthBtn">Monat</button>' +
       '</div>' +
       '<p id="periodTripCount">Fahrten diese Woche: ' + stats.tripCount + '</p>' +
+      abbreviationSection +
       passwordSection +
       roleToggle +
       removeButton +
@@ -903,6 +910,33 @@
     document.getElementById("backToMembersBtn").addEventListener("click", loadMembersList);
     document.getElementById("periodWeekBtn").addEventListener("click", function () { refreshMemberStats(detail.id, "week"); });
     document.getElementById("periodMonthBtn").addEventListener("click", function () { refreshMemberStats(detail.id, "month"); });
+
+    const saveAbbreviationBtn = document.getElementById("saveMemberAbbreviationBtn");
+    if (saveAbbreviationBtn) {
+      saveAbbreviationBtn.addEventListener("click", async function () {
+        const errorEl = document.getElementById("memberAbbreviationError");
+        errorEl.style.display = "none";
+        const abbreviation = document.getElementById("memberAbbreviationInput").value.trim();
+        try {
+          const response = await fetch("/api/members/" + encodeURIComponent(detail.id), {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ abbreviation: abbreviation })
+          });
+          if (response.status === 401) { renderLogin(); return; }
+          if (!response.ok) {
+            const data = await response.json().catch(function () { return {}; });
+            errorEl.textContent = data.error || "Konnte nicht gespeichert werden.";
+            errorEl.style.display = "block";
+            return;
+          }
+          loadMemberDetail(detail.id);
+        } catch (e) {
+          errorEl.textContent = "Verbindung fehlgeschlagen.";
+          errorEl.style.display = "block";
+        }
+      });
+    }
 
     const savePasswordBtn = document.getElementById("saveMemberPasswordBtn");
     if (savePasswordBtn) {
@@ -1187,11 +1221,31 @@
     return String(text).replace(/[\\()]/g, function (c) { return "\\" + c; });
   }
 
+  // Windows-1252 (WinAnsiEncoding) weicht von reinem Latin-1 nur im
+  // Byte-Bereich 0x80-0x9F ab - dort sitzen bei Latin-1 nur Steuerzeichen,
+  // bei WinAnsi aber echte Glyphen (u.a. Apples "intelligente"
+  // Anführungszeichen, Gedankenstriche, Ellipse, Euro-Zeichen). Ohne diese
+  // Tabelle würden diese Zeichen zu "?" statt zum korrekten Byte.
+  const WIN_ANSI_HIGH_CHARS = {
+    0x20ac: 0x80, 0x201a: 0x82, 0x0192: 0x83, 0x201e: 0x84, 0x2026: 0x85,
+    0x2020: 0x86, 0x2021: 0x87, 0x02c6: 0x88, 0x2030: 0x89, 0x0160: 0x8a,
+    0x2039: 0x8b, 0x0152: 0x8c, 0x017d: 0x8e, 0x2018: 0x91, 0x2019: 0x92,
+    0x201c: 0x93, 0x201d: 0x94, 0x2022: 0x95, 0x2013: 0x96, 0x2014: 0x97,
+    0x02dc: 0x98, 0x2122: 0x99, 0x0161: 0x9a, 0x203a: 0x9b, 0x0153: 0x9c,
+    0x017e: 0x9e, 0x0178: 0x9f,
+  };
+
   function latin1BytesFromString(str) {
     const bytes = new Uint8Array(str.length);
     for (let i = 0; i < str.length; i++) {
       const code = str.charCodeAt(i);
-      bytes[i] = code <= 255 ? code : 0x3f; // "?" für nicht darstellbare Zeichen
+      if (code <= 255) {
+        bytes[i] = code;
+      } else if (WIN_ANSI_HIGH_CHARS[code] !== undefined) {
+        bytes[i] = WIN_ANSI_HIGH_CHARS[code];
+      } else {
+        bytes[i] = 0x3f; // "?" für alles, was WinAnsi wirklich nicht darstellen kann
+      }
     }
     return bytes;
   }

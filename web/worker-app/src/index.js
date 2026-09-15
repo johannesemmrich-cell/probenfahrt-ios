@@ -101,6 +101,27 @@ async function findUserByEncryptedPassword(env, encrypted) {
   };
 }
 
+/**
+ * Für den Nach-dem-Schreiben-Check in handlePutMemberWebPassword: liefert
+ * die Anzahl der User-Records mit genau diesem Chiffretext (nicht nur den
+ * ersten Treffer wie findUserByEncryptedPassword) - CloudKit Web Services
+ * kennt kein Unique-Constraint/keine Transaktion über Check+Schreiben
+ * hinweg, das ist der einzige Weg, eine durch zwei gleichzeitige Requests
+ * entstandene Kollision überhaupt zu bemerken.
+ */
+async function countUsersWithEncryptedPassword(env, encrypted) {
+  const body = {
+    query: {
+      recordType: "User",
+      filterBy: [
+        { fieldName: "webPasswordEncrypted", comparator: "EQUALS", fieldValue: { value: encrypted, type: "STRING" } },
+      ],
+    },
+  };
+  const records = await queryAllRecords(env, body);
+  return records.length;
+}
+
 async function hmacKey(env) {
   return crypto.subtle.importKey(
     "raw",
@@ -171,14 +192,39 @@ async function verifySession(request, env) {
  * in EffectiveAdmin.swift, nur ohne den nativen Zwischenschritt (dort muss
  * man Entwicklermodus zusätzlich noch manuell auf "Alle Admin-Rechte"
  * stellen - hier auf User-Wunsch direkt automatisch beim Dev-Login).
+ *
+ * Prüft die AKTUELL in CloudKit hinterlegte Rolle statt nur der Momentaufnahme
+ * im Session-Cookie - das Cookie ist self-signed und lebt bis zu 30 Tage
+ * gleitend, ohne Re-Check würde eine nachträgliche Degradierung/Löschung
+ * eines Mitglieds durch einen Admin erst nach Cookie-Ablauf beim betroffenen
+ * Nutzer wirken (echte Rechte-Lücke, kein Cache-Detail).
+ *
+ * Wird an vielen Stellen VOR dem üblichen try/catch der Handler aufgerufen -
+ * ein CloudKit-Fehler hier (z.B. Netzwerkproblem) fängt sich deshalb selbst
+ * ab und gilt im Zweifel als "kein Admin" (fail closed), statt als
+ * ungefangene Exception bis zum Worker-Fetch-Handler durchzureichen (das
+ * würde eine rohe 500-Fehlerseite statt der üblichen JSON-Fehler dieser App
+ * produzieren).
  */
-function isAdminSession(session) {
-  return session.dev === true || session.role === "admin" || session.role === "viceAdmin";
+async function isAdminSession(env, session) {
+  if (session.dev === true) return true;
+  try {
+    const record = await findUserRecordByUserID(env, session.gid, session.uid);
+    return !!record && (record.role === "admin" || record.role === "viceAdmin");
+  } catch {
+    return false;
+  }
 }
 
-/** Strikter als isAdminSession (schließt viceAdmin aus) - Pendant zu isFullAdmin in EffectiveAdmin.swift. */
-function isFullAdminSession(session) {
-  return session.dev === true || session.role === "admin";
+/** Strikter als isAdminSession (schließt viceAdmin aus) - Pendant zu isFullAdmin in EffectiveAdmin.swift. Gleiches Fail-closed-Verhalten bei CloudKit-Fehlern. */
+async function isFullAdminSession(env, session) {
+  if (session.dev === true) return true;
+  try {
+    const record = await findUserRecordByUserID(env, session.gid, session.uid);
+    return !!record && record.role === "admin";
+  } catch {
+    return false;
+  }
 }
 
 async function attachRefreshedSession(response, env, session) {
@@ -269,7 +315,12 @@ async function handlePostLogin(request, env) {
   }
 
   try {
-    if (await matchesDevPassword(password)) {
+    // Nur außerhalb von Production erlaubt - das Passwort steht (bewusst,
+    // für Entwickler) im Klartext in der README, ist also kein echtes
+    // Geheimnis mehr und darf niemals gegen die echte Produktivgruppe
+    // funktionieren, sobald CLOUDKIT_ENVIRONMENT irgendwann auf
+    // "production" umgestellt wird (siehe BACKLOG #6).
+    if (env.CLOUDKIT_ENVIRONMENT !== "production" && (await matchesDevPassword(password))) {
       const devUser = await findOrCreateDevUser(env);
       if (!devUser) return jsonResponse(401, { error: "Dev-Gruppe nicht gefunden." });
       devUser.dev = true;
@@ -305,18 +356,37 @@ async function handlePostLogout() {
   return jsonResponse(200, { ok: true }, { "Set-Cookie": clearedSessionCookie() });
 }
 
+/**
+ * Wird vom Frontend beim Start/Reload aufgerufen - Gelegenheit, Rolle/Name/
+ * Kürzel im Cookie gegen den aktuellen CloudKit-Stand zu erneuern statt
+ * blind die Werte vom Login-Zeitpunkt weiterzureichen (siehe isAdminSession-
+ * Kommentar). Ein zwischenzeitlich entferntes Konto meldet sich hierüber
+ * spätestens beim nächsten Laden der Web-App zwangsweise ab.
+ */
 async function handleGetMe(request, env) {
   const session = await verifySession(request, env);
   if (!session) return jsonResponse(401, { error: "Nicht angemeldet" });
-  const response = jsonResponse(200, {
-    id: session.uid,
-    name: session.name,
-    abbreviation: session.abbr,
-    role: session.role,
-    isAdmin: isAdminSession(session),
-    isDev: session.dev === true,
-  });
-  return attachRefreshedSession(response, env, session);
+
+  try {
+    let liveSession = session;
+    if (session.dev !== true) {
+      const record = await findUserRecordByUserID(env, session.gid, session.uid);
+      if (!record) return jsonResponse(401, { error: "Konto wurde entfernt" }, { "Set-Cookie": clearedSessionCookie() });
+      liveSession = { ...session, role: record.role, name: record.name, abbr: record.abbreviation };
+    }
+
+    const response = jsonResponse(200, {
+      id: liveSession.uid,
+      name: liveSession.name,
+      abbreviation: liveSession.abbr,
+      role: liveSession.role,
+      isAdmin: await isAdminSession(env, liveSession),
+      isDev: liveSession.dev === true,
+    });
+    return attachRefreshedSession(response, env, liveSession);
+  } catch (error) {
+    return jsonResponse(502, { error: String(error), detail: error.detail });
+  }
 }
 
 // MARK: - Umfragen/Kalender (SurveyDay/SurveyEntry, siehe
@@ -467,18 +537,23 @@ async function findUsersForGroup(env, groupID) {
 // MARK: - Profil (eigenes) + Mitglieder verwalten (User-Record-CRUD, siehe
 // SettingsView.swift/TeamMembersView.swift/MemberDetailView.swift)
 
+/**
+ * User-Records werden immer mit der deterministischen recordName
+ * `user-${userID}` angelegt (siehe findOrCreateDevUser und Swift-Pendant
+ * CloudKitUserRepository.userRecordID(id:)) - direkter Lookup per recordName
+ * statt einer Query auf das Feld `userID`, das (anders als groupID/
+ * webPasswordEncrypted, siehe README-Checkliste) nicht als Queryable
+ * markiert ist und gegen echtes CloudKit mit einem Server-Fehler scheitern
+ * würde.
+ */
 async function findUserRecordByUserID(env, groupID, userID) {
-  const body = {
-    query: {
-      recordType: "User",
-      filterBy: [
-        { fieldName: "userID", comparator: "EQUALS", fieldValue: { value: userID, type: "STRING" } },
-      ],
-    },
-  };
-  const records = await queryAllRecords(env, body);
-  const record = records.find((r) => r.fields.groupID && r.fields.groupID.value === groupID);
-  if (!record) return null;
+  const result = await signAndPost(env, databasePath(env, "records/lookup"), {
+    records: [{ recordName: `user-${userID}` }],
+  });
+  const records = result.records || [];
+  if (!records.length || !records[0].fields) return null;
+  const record = records[0];
+  if (!record.fields.groupID || record.fields.groupID.value !== groupID) return null;
   return {
     recordName: record.recordName,
     id: record.fields.userID.value,
@@ -539,7 +614,7 @@ async function handlePutProfile(request, env) {
     const record = await findUserRecordByUserID(env, session.gid, session.uid);
     if (!record) return jsonResponse(404, { error: "Nutzer nicht gefunden" });
 
-    const canEditAbbreviation = isFullAdminSession(session);
+    const canEditAbbreviation = await isFullAdminSession(env, session);
     let nextAbbreviation = record.abbreviation;
     if (canEditAbbreviation && abbreviation && abbreviation.toLowerCase() !== record.abbreviation.toLowerCase()) {
       if (await isAbbreviationTakenInGroup(env, session.gid, abbreviation, session.uid)) {
@@ -652,7 +727,7 @@ function pad2(n) {
 async function handleGetMembers(request, env) {
   const session = await verifySession(request, env);
   if (!session) return jsonResponse(401, { error: "Nicht angemeldet" });
-  if (!isAdminSession(session)) return jsonResponse(403, { error: "Nur für Admins" });
+  if (!(await isAdminSession(env, session))) return jsonResponse(403, { error: "Nur für Admins" });
 
   try {
     const users = await findUsersForGroup(env, session.gid);
@@ -669,23 +744,24 @@ async function handleGetMembers(request, env) {
 async function handleGetMemberDetail(request, env, memberID) {
   const session = await verifySession(request, env);
   if (!session) return jsonResponse(401, { error: "Nicht angemeldet" });
-  if (!isAdminSession(session)) return jsonResponse(403, { error: "Nur für Admins" });
+  if (!(await isAdminSession(env, session))) return jsonResponse(403, { error: "Nur für Admins" });
 
   try {
     const record = await findUserRecordByUserID(env, session.gid, memberID);
     if (!record) return jsonResponse(404, { error: "Mitglied nicht gefunden" });
 
     const entries = await findAllEntriesForUser(env, session.gid, memberID);
+    const isFullAdminViewing = await isFullAdminSession(env, session);
     const payload = {
       id: record.id,
       name: record.name,
       abbreviation: record.abbreviation,
       role: record.role,
       totalTrips: entries.length,
-      isFullAdminViewing: isFullAdminSession(session),
+      isFullAdminViewing,
     };
     // Web-Zugang-Passwort nur für Haupt-Admins sichtbar, wie MemberDetailView.
-    if (isFullAdminSession(session)) {
+    if (isFullAdminViewing) {
       payload.webPassword = record.webPasswordEncrypted ? await decryptWebPassword(env, record.webPasswordEncrypted) : "";
     }
     const response = jsonResponse(200, payload);
@@ -698,7 +774,7 @@ async function handleGetMemberDetail(request, env, memberID) {
 async function handleGetMemberStats(request, env, memberID) {
   const session = await verifySession(request, env);
   if (!session) return jsonResponse(401, { error: "Nicht angemeldet" });
-  if (!isAdminSession(session)) return jsonResponse(403, { error: "Nur für Admins" });
+  if (!(await isAdminSession(env, session))) return jsonResponse(403, { error: "Nur für Admins" });
 
   const url = new URL(request.url);
   const period = url.searchParams.get("period") === "month" ? "month" : "week";
@@ -726,7 +802,7 @@ async function handleGetMemberStats(request, env, memberID) {
 async function handlePutMember(request, env, memberID) {
   const session = await verifySession(request, env);
   if (!session) return jsonResponse(401, { error: "Nicht angemeldet" });
-  if (!isFullAdminSession(session)) return jsonResponse(403, { error: "Nur für Haupt-Admins" });
+  if (!(await isFullAdminSession(env, session))) return jsonResponse(403, { error: "Nur für Haupt-Admins" });
 
   let abbreviation;
   try {
@@ -757,7 +833,7 @@ async function handlePutMember(request, env, memberID) {
 async function handlePutMemberWebPassword(request, env, memberID) {
   const session = await verifySession(request, env);
   if (!session) return jsonResponse(401, { error: "Nicht angemeldet" });
-  if (!isFullAdminSession(session)) return jsonResponse(403, { error: "Nur für Haupt-Admins" });
+  if (!(await isFullAdminSession(env, session))) return jsonResponse(403, { error: "Nur für Haupt-Admins" });
 
   let password;
   try {
@@ -780,6 +856,20 @@ async function handlePutMemberWebPassword(request, env, memberID) {
       }
     }
     await saveUserRecord(env, { ...record, webPasswordEncrypted: encrypted });
+
+    // Check-dann-Schreiben ohne Sperre dazwischen: zwei gleichzeitige
+    // Zuweisungen desselben Passworts an zwei Mitglieder könnten beide den
+    // Uniqueness-Check oben bestehen. Re-Check NACH dem eigenen Schreiben
+    // erkennt diesen Fall (>1 Treffer für denselben Chiffretext) und macht
+    // die eigene Änderung wieder rückgängig, statt zwei Mitglieder
+    // stillschweigend dasselbe Passwort tragen zu lassen.
+    if (encrypted && (await countUsersWithEncryptedPassword(env, encrypted)) > 1) {
+      await saveUserRecord(env, { ...record, webPasswordEncrypted: record.webPasswordEncrypted || "" });
+      return jsonResponse(409, {
+        error: "Dieses Passwort wurde gerade gleichzeitig einem anderen Mitglied zugewiesen. Bitte erneut versuchen.",
+      });
+    }
+
     const response = jsonResponse(200, { ok: true });
     return attachRefreshedSession(response, env, session);
   } catch (error) {
@@ -790,7 +880,7 @@ async function handlePutMemberWebPassword(request, env, memberID) {
 async function handlePutMemberRole(request, env, memberID) {
   const session = await verifySession(request, env);
   if (!session) return jsonResponse(401, { error: "Nicht angemeldet" });
-  if (!isFullAdminSession(session)) return jsonResponse(403, { error: "Nur für Haupt-Admins" });
+  if (!(await isFullAdminSession(env, session))) return jsonResponse(403, { error: "Nur für Haupt-Admins" });
   if (memberID === session.uid) return jsonResponse(403, { error: "Eigene Rolle kann nicht geändert werden." });
 
   let role;
@@ -820,7 +910,7 @@ async function handlePutMemberRole(request, env, memberID) {
 async function handleDeleteMember(request, env, memberID) {
   const session = await verifySession(request, env);
   if (!session) return jsonResponse(401, { error: "Nicht angemeldet" });
-  if (!isFullAdminSession(session)) return jsonResponse(403, { error: "Nur für Haupt-Admins" });
+  if (!(await isFullAdminSession(env, session))) return jsonResponse(403, { error: "Nur für Haupt-Admins" });
   if (memberID === session.uid) return jsonResponse(403, { error: "Eigenes Konto kann nicht entfernt werden." });
 
   try {
@@ -1019,7 +1109,7 @@ async function saveSampleReport(env, recordName, groupID, locationID, hasSamples
 async function handleGetPharmacies(request, env) {
   const session = await verifySession(request, env);
   if (!session) return jsonResponse(401, { error: "Nicht angemeldet" });
-  if (!isAdminSession(session)) return jsonResponse(403, { error: "Nur für Admins" });
+  if (!(await isAdminSession(env, session))) return jsonResponse(403, { error: "Nur für Admins" });
 
   try {
     const today = berlinDateString(Date.now());
@@ -1048,7 +1138,7 @@ async function handleGetPharmacies(request, env) {
 async function handleGetPharmacyDetail(request, env, pharmacyID) {
   const session = await verifySession(request, env);
   if (!session) return jsonResponse(401, { error: "Nicht angemeldet" });
-  if (!isAdminSession(session)) return jsonResponse(403, { error: "Nur für Admins" });
+  if (!(await isAdminSession(env, session))) return jsonResponse(403, { error: "Nur für Admins" });
 
   try {
     const location = await findLocationRecordByID(env, session.gid, pharmacyID);
@@ -1074,7 +1164,7 @@ async function handleGetPharmacyDetail(request, env, pharmacyID) {
 async function handlePostPharmacy(request, env) {
   const session = await verifySession(request, env);
   if (!session) return jsonResponse(401, { error: "Nicht angemeldet" });
-  if (!isAdminSession(session)) return jsonResponse(403, { error: "Nur für Admins" });
+  if (!(await isAdminSession(env, session))) return jsonResponse(403, { error: "Nur für Admins" });
 
   let name, address, usesQRCheckIn;
   try {
@@ -1111,7 +1201,7 @@ async function handlePostPharmacy(request, env) {
 async function handlePostPharmacyReport(request, env, pharmacyID) {
   const session = await verifySession(request, env);
   if (!session) return jsonResponse(401, { error: "Nicht angemeldet" });
-  if (!isAdminSession(session)) return jsonResponse(403, { error: "Nur für Admins" });
+  if (!(await isAdminSession(env, session))) return jsonResponse(403, { error: "Nur für Admins" });
 
   let hasSamples;
   try {
@@ -1141,7 +1231,7 @@ async function handlePostPharmacyReport(request, env, pharmacyID) {
 async function handleDeletePharmacy(request, env, pharmacyID) {
   const session = await verifySession(request, env);
   if (!session) return jsonResponse(401, { error: "Nicht angemeldet" });
-  if (!isAdminSession(session)) return jsonResponse(403, { error: "Nur für Admins" });
+  if (!(await isAdminSession(env, session))) return jsonResponse(403, { error: "Nur für Admins" });
 
   try {
     const location = await findLocationRecordByID(env, session.gid, pharmacyID);
@@ -1204,7 +1294,7 @@ async function findSampleReportsInRange(env, groupID, fromDateString, toDateStri
 async function handleGetMonthlyReport(request, env) {
   const session = await verifySession(request, env);
   if (!session) return jsonResponse(401, { error: "Nicht angemeldet" });
-  if (!isAdminSession(session)) return jsonResponse(403, { error: "Nur für Admins" });
+  if (!(await isAdminSession(env, session))) return jsonResponse(403, { error: "Nur für Admins" });
 
   const url = new URL(request.url);
   const monthYear = parseMonthYear(url);
@@ -1236,7 +1326,7 @@ async function handleGetMonthlyReport(request, env) {
 async function handleGetSamplesReport(request, env) {
   const session = await verifySession(request, env);
   if (!session) return jsonResponse(401, { error: "Nicht angemeldet" });
-  if (!isAdminSession(session)) return jsonResponse(403, { error: "Nur für Admins" });
+  if (!(await isAdminSession(env, session))) return jsonResponse(403, { error: "Nur für Admins" });
 
   const url = new URL(request.url);
   const monthYear = parseMonthYear(url);
@@ -1305,8 +1395,8 @@ async function recordExists(env, recordName) {
 }
 
 /** Admins dürfen jeden Tag bearbeiten, alle anderen nur heute/zukünftig - Pendant zu canEditSurveyDay in EffectiveAdmin.swift. */
-function canEditDay(session, dayDateString) {
-  if (isAdminSession(session)) return true;
+async function canEditDay(env, session, dayDateString) {
+  if (await isAdminSession(env, session)) return true;
   return dayDateString >= berlinDateString(Date.now());
 }
 
@@ -1328,7 +1418,7 @@ async function handlePostSurveyEntry(request, env) {
     return jsonResponse(400, { error: "Ungültige Anfrage" });
   }
 
-  if (targetUserID !== session.uid && !isAdminSession(session)) {
+  if (targetUserID !== session.uid && !(await isAdminSession(env, session))) {
     return jsonResponse(403, { error: "Nur Admins können für andere Mitglieder eintragen" });
   }
 
@@ -1336,7 +1426,7 @@ async function handlePostSurveyEntry(request, env) {
     const day = await findSurveyDayByID(env, session.gid, dayID);
     if (!day) return jsonResponse(404, { error: "Unbekannter Tag" });
     if (day.isLocked) return jsonResponse(409, { error: "Dieser Tag ist gesperrt" });
-    if (!canEditDay(session, day.date)) {
+    if (!(await canEditDay(env, session, day.date))) {
       return jsonResponse(403, { error: "Vergangene Tage können nur von Admins bearbeitet werden" });
     }
 
@@ -1380,7 +1470,7 @@ async function handleDeleteSurveyEntry(request, env) {
     return jsonResponse(400, { error: "Ungültige Anfrage" });
   }
 
-  if (targetUserID !== session.uid && !isAdminSession(session)) {
+  if (targetUserID !== session.uid && !(await isAdminSession(env, session))) {
     return jsonResponse(403, { error: "Nur Admins können für andere Mitglieder austragen" });
   }
 
@@ -1391,7 +1481,7 @@ async function handleDeleteSurveyEntry(request, env) {
     // Vergangenheits-Regel gilt trotzdem, sonst könnte man rückwirkend
     // Fahrten verschwinden lassen.
     const day = await findSurveyDayByID(env, session.gid, dayID);
-    if (day && !canEditDay(session, day.date)) {
+    if (day && !(await canEditDay(env, session, day.date))) {
       return jsonResponse(403, { error: "Vergangene Tage können nur von Admins bearbeitet werden" });
     }
     try {
@@ -1411,7 +1501,7 @@ async function handleDeleteSurveyEntry(request, env) {
 async function handlePostSurveyDayLock(request, env, dayID) {
   const session = await verifySession(request, env);
   if (!session) return jsonResponse(401, { error: "Nicht angemeldet" });
-  if (!isAdminSession(session)) return jsonResponse(403, { error: "Nur für Admins" });
+  if (!(await isAdminSession(env, session))) return jsonResponse(403, { error: "Nur für Admins" });
 
   let locked, reason;
   try {
