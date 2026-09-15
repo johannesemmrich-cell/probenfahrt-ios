@@ -118,6 +118,7 @@ async function createSessionCookie(env, user) {
     role: user.role,
     name: user.name,
     abbr: user.abbreviation,
+    dev: user.dev === true,
     exp: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS,
   };
   const payloadB64 = base64UrlEncode(new TextEncoder().encode(JSON.stringify(payload)));
@@ -164,13 +165,20 @@ async function verifySession(request, env) {
   }
 }
 
+/**
+ * session.dev (nur via Dev-Passwort-Login gesetzt, siehe handlePostLogin)
+ * gibt automatisch volle Admin-Rechte - Pendant zu DevModeStore.isAdminPreviewActive
+ * in EffectiveAdmin.swift, nur ohne den nativen Zwischenschritt (dort muss
+ * man Entwicklermodus zusätzlich noch manuell auf "Alle Admin-Rechte"
+ * stellen - hier auf User-Wunsch direkt automatisch beim Dev-Login).
+ */
 function isAdminSession(session) {
-  return session.role === "admin" || session.role === "viceAdmin";
+  return session.dev === true || session.role === "admin" || session.role === "viceAdmin";
 }
 
 /** Strikter als isAdminSession (schließt viceAdmin aus) - Pendant zu isFullAdmin in EffectiveAdmin.swift. */
 function isFullAdminSession(session) {
-  return session.role === "admin";
+  return session.dev === true || session.role === "admin";
 }
 
 async function attachRefreshedSession(response, env, session) {
@@ -180,6 +188,7 @@ async function attachRefreshedSession(response, env, session) {
     role: session.role,
     name: session.name,
     abbreviation: session.abbr,
+    dev: session.dev === true,
   });
   response.headers.set("Set-Cookie", cookie);
   return response;
@@ -263,6 +272,7 @@ async function handlePostLogin(request, env) {
     if (await matchesDevPassword(password)) {
       const devUser = await findOrCreateDevUser(env);
       if (!devUser) return jsonResponse(401, { error: "Dev-Gruppe nicht gefunden." });
+      devUser.dev = true;
       const cookie = await createSessionCookie(env, devUser);
       return jsonResponse(
         200,
@@ -304,6 +314,7 @@ async function handleGetMe(request, env) {
     abbreviation: session.abbr,
     role: session.role,
     isAdmin: isAdminSession(session),
+    isDev: session.dev === true,
   });
   return attachRefreshedSession(response, env, session);
 }
@@ -541,6 +552,41 @@ async function handlePutProfile(request, env) {
 
     const response = jsonResponse(200, { name, abbreviation: nextAbbreviation });
     return attachRefreshedSession(response, env, { ...session, name, abbr: nextAbbreviation });
+  } catch (error) {
+    return jsonResponse(502, { error: String(error), detail: error.detail });
+  }
+}
+
+/**
+ * Pendant zu AdminCode.swift ("Admin", case-insensitive, kein Hash - siehe
+ * dortiger Kommentar: bewusst einfach, kein echtes Sicherheitsmerkmal).
+ * Jedes Mitglied darf das versuchen, kein Admin-Gate auf diesem Endpunkt -
+ * genau das ist der Zweck (Selbst-Freischaltung ohne bestehenden Admin).
+ */
+async function handlePostAdminCode(request, env) {
+  const session = await verifySession(request, env);
+  if (!session) return jsonResponse(401, { error: "Nicht angemeldet" });
+
+  let code;
+  try {
+    const payload = await request.json();
+    code = (payload.code || "").trim();
+  } catch {
+    return jsonResponse(400, { error: "Ungültige Anfrage" });
+  }
+  if (!code || code.toLowerCase() !== "admin") {
+    // 403, nicht 401 - 401 bedeutet in dieser App überall "Session ungültig",
+    // ein falscher Code ist aber kein Auth-Problem, sonst würde das
+    // Frontend fälschlich den Login-Screen zeigen statt eine Inline-Fehlermeldung.
+    return jsonResponse(403, { error: "Falscher Code." });
+  }
+
+  try {
+    const record = await findUserRecordByUserID(env, session.gid, session.uid);
+    if (!record) return jsonResponse(404, { error: "Nutzer nicht gefunden" });
+    await saveUserRecord(env, { ...record, role: "admin" });
+    const response = jsonResponse(200, { role: "admin" });
+    return attachRefreshedSession(response, env, { ...session, role: "admin" });
   } catch (error) {
     return jsonResponse(502, { error: String(error), detail: error.detail });
   }
@@ -1440,6 +1486,9 @@ export default {
     }
     if (request.method === "PUT" && url.pathname === "/api/profile") {
       return handlePutProfile(request, env);
+    }
+    if (request.method === "POST" && url.pathname === "/api/profile/admin-code") {
+      return handlePostAdminCode(request, env);
     }
     if (request.method === "GET" && url.pathname === "/api/members") {
       return handleGetMembers(request, env);

@@ -101,7 +101,7 @@
   .cal-daynum { font-weight: 600; }
   .cal-initials { font-size: 0.6rem; color: #6e6e73; }
   .cal-lock { font-size: 0.7rem; }
-  .legal-links { text-align: center; margin-top: 16px; font-size: 0.75rem; }
+  .legal-links { text-align: center; margin-top: 56px; padding-top: 16px; font-size: 0.75rem; }
   .legal-links a { color: #a1a1a6; text-decoration: none; }
   .legal-links a:hover { text-decoration: underline; }
 </style>
@@ -671,6 +671,18 @@
       ? '<input type="text" id="profileAbbreviation" value="' + escapeHtml(me.abbreviation) + '" />'
       : '<p class="muted">' + escapeHtml(me.abbreviation) + ' (nur der Haupt-Admin kann das ändern)</p>';
 
+    const adminCodeSection = me.role !== "admin" ? (
+      '<h3>Haupt-Admin-Code</h3>' +
+      '<input type="text" id="adminCodeInput" placeholder="Code eingeben, um Haupt-Admin-Rechte freizuschalten" />' +
+      '<button class="secondary" id="submitAdminCodeBtn">Bestätigen</button>' +
+      '<p class="error" id="adminCodeError" style="display:none"></p>'
+    ) : "";
+
+    const devSection = me.isDev ? (
+      '<h3>Entwicklung</h3>' +
+      '<p class="muted">✅ Entwicklermodus aktiv — alle Haupt-Admin-Rechte automatisch freigeschaltet (unabhängig von der echten Rolle).</p>'
+    ) : "";
+
     const adminSection = me.isAdmin ? (
       '<h3>Admin</h3>' +
       '<div class="nav">' +
@@ -693,6 +705,8 @@
       abbreviationField +
       '<button class="primary" id="saveProfileBtn">Speichern</button>' +
       '<p class="error" id="profileError" style="display:none"></p>' +
+      adminCodeSection +
+      devSection +
       adminSection +
       '<button class="secondary" id="logoutBtn2">Abmelden</button>'
     );
@@ -701,6 +715,8 @@
   function wireSettingsRoot() {
     document.getElementById("saveProfileBtn").addEventListener("click", saveProfile);
     document.getElementById("logoutBtn2").addEventListener("click", logout);
+    const adminCodeBtn = document.getElementById("submitAdminCodeBtn");
+    if (adminCodeBtn) adminCodeBtn.addEventListener("click", submitAdminCode);
     if (!me.isAdmin) return;
     document.getElementById("prevAdminMonthBtn").addEventListener("click", function () {
       adminMonth = adminMonth.month === 1 ? { year: adminMonth.year - 1, month: 12 } : { year: adminMonth.year, month: adminMonth.month - 1 };
@@ -754,6 +770,33 @@
       const data = await response.json();
       me.name = data.name;
       me.abbreviation = data.abbreviation;
+      loadSettingsRoot();
+    } catch (e) {
+      errorEl.textContent = "Verbindung fehlgeschlagen.";
+      errorEl.style.display = "block";
+    }
+  }
+
+  async function submitAdminCode() {
+    const errorEl = document.getElementById("adminCodeError");
+    errorEl.style.display = "none";
+    const code = document.getElementById("adminCodeInput").value.trim();
+    try {
+      const response = await fetch("/api/profile/admin-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: code })
+      });
+      if (response.status === 401) { renderLogin(); return; }
+      if (!response.ok) {
+        const data = await response.json().catch(function () { return {}; });
+        errorEl.textContent = data.error || "Falscher Code.";
+        errorEl.style.display = "block";
+        return;
+      }
+      const data = await response.json();
+      me.role = data.role;
+      me.isAdmin = true;
       loadSettingsRoot();
     } catch (e) {
       errorEl.textContent = "Verbindung fehlgeschlagen.";
