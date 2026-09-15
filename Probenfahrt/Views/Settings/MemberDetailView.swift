@@ -15,9 +15,7 @@ struct MemberDetailView: View {
     @Environment(DevModeStore.self) private var devMode
 
     @State private var abbreviation: String
-    @State private var webPassword: String = ""
-    @State private var hasEditedWebPassword = false
-    @State private var webPasswordIsSet: Bool
+    @State private var webPassword: String
     @State private var errorMessage: String?
     @State private var webPasswordErrorMessage: String?
     @State private var allEntries: [SurveyEntryWithDate] = []
@@ -36,7 +34,7 @@ struct MemberDetailView: View {
         self.currentUser = currentUser
         self.onRemoved = onRemoved
         _abbreviation = State(initialValue: user.abbreviation)
-        _webPasswordIsSet = State(initialValue: user.webPasswordHash != nil)
+        _webPassword = State(initialValue: WebPasswordEncryption.decrypt(user.webPasswordEncrypted ?? "") ?? "")
     }
 
     private var periodComponent: Calendar.Component { period == .week ? .weekOfYear : .month }
@@ -81,24 +79,16 @@ struct MemberDetailView: View {
 
             if isFullAdmin {
                 Section {
-                    // Zeigt nie das bestehende Passwort an - es ist nur noch
-                    // gehasht gespeichert, kann also gar nicht mehr gelesen
-                    // werden (BACKLOG #5). hasEditedWebPassword unterscheidet
-                    // "Feld nie angefasst" (nichts tun) von "Feld bewusst
-                    // geleert" (Zugang entfernen).
-                    TextField(webPasswordIsSet ? "Neues Passwort (leer = Zugang entfernen)" : "Passwort (leer = kein Zugang)", text: $webPassword)
+                    TextField("Passwort (leer = kein Zugang)", text: $webPassword)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                        .onChange(of: webPassword) { hasEditedWebPassword = true }
-                        // onSubmit (Return-Taste) UND onDisappear, nicht nur
-                        // Disappear wie vorher - ein Fehler beim Speichern
-                        // (z.B. fehlende Berechtigung) muss sichtbar sein,
-                        // während der Screen noch offen ist, sonst verpufft
-                        // die Fehlermeldung auf einem schon verlassenen
-                        // Screen. Kein Doppel-Save-Risiko: hasEditedWebPassword
-                        // wird nach einem erfolgreichen Save zurückgesetzt,
-                        // ein zweiter Aufruf (onDisappear danach) ist dann ein
-                        // No-Op.
+                        // onSubmit (Return-Taste) UND onDisappear - ein
+                        // Fehler beim Speichern (z.B. fehlende Berechtigung)
+                        // muss sichtbar sein, während der Screen noch offen
+                        // ist, sonst verpufft die Fehlermeldung auf einem
+                        // schon verlassenen Screen. Kein Doppel-Save-Risiko:
+                        // saveWebPassword() ist ein No-Op, wenn sich der Wert
+                        // seit dem letzten Speichern nicht geändert hat.
                         .onSubmit { Task { await saveWebPassword() } }
                         .onDisappear { Task { await saveWebPassword() } }
                     if let webPasswordErrorMessage {
@@ -107,9 +97,7 @@ struct MemberDetailView: View {
                 } header: {
                     Text("Web-Zugang")
                 } footer: {
-                    Text(webPasswordIsSet
-                         ? "Aktuell ist ein Passwort gesetzt, mit dem sich \(user.name) auf app.mediproben.com anmelden kann. Neues Passwort eingeben zum Ändern, Feld leeren und verlassen zum Entfernen."
-                         : "Noch kein Web-Zugang eingerichtet. Passwort eingeben, damit sich \(user.name) auf app.mediproben.com anmelden kann, ohne ein Apple-Gerät zu benutzen.")
+                    Text("Mit diesem Passwort kann sich \(user.name) auf app.mediproben.com anmelden, ohne ein Apple-Gerät zu benutzen. Feld leeren und speichern entfernt den Zugang wieder.")
                 }
             }
 
@@ -235,20 +223,19 @@ struct MemberDetailView: View {
     }
 
     private func saveWebPassword() async {
-        guard hasEditedWebPassword else { return }
         webPasswordErrorMessage = nil
         let trimmed = webPassword.trimmingCharacters(in: .whitespacesAndNewlines)
+        let currentlyStored = WebPasswordEncryption.decrypt(user.webPasswordEncrypted ?? "") ?? ""
+        guard trimmed != currentlyStored else { return }
         do {
             if !trimmed.isEmpty {
                 if try await userRepository.isWebPasswordTaken(trimmed, excluding: user.id) {
                     webPasswordErrorMessage = "Dieses Passwort ist schon einem anderen Mitglied zugewiesen."
+                    webPassword = currentlyStored
                     return
                 }
             }
             try await userRepository.setWebPassword(trimmed, for: user.id)
-            webPasswordIsSet = !trimmed.isEmpty
-            hasEditedWebPassword = false
-            webPassword = ""
         } catch {
             // Vorher try? auf beiden Aufrufen - ein echter CloudKit-Fehler
             // (z.B. fehlende Write-Berechtigung, nicht als Queryable

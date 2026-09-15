@@ -54,15 +54,19 @@ ergänzt.
      "existiert noch nicht" sehen und kollidieren (kein Datenverlust, aber
      eine der beiden Anfragen schlägt sichtbar fehl).
 5. **Erledigt (2026-09-15):** Web-Passwort wurde im Klartext gespeichert
-   und verglichen (`User.webPassword`). Behoben im Zuge des Web-App-Umbaus
-   (app.mediproben.com, siehe README): Feld heißt jetzt
-   `User.webPasswordHash`, gespeichert wird `SHA256(Pepper:Passwort)`
-   (`WebPasswordHashing.swift` / `hashWebPassword` in
-   `web/worker-app/src/index.js`, Pepper muss auf beiden Seiten identisch
-   sein — `WebPasswordPepper.swift` bzw. Worker-Secret
-   `WEB_PASSWORD_PEPPER`). `MemberDetailView` kann das gesetzte Passwort
-   dadurch nicht mehr anzeigen/vorbefüllen, nur noch neu setzen oder
-   entfernen.
+   und verglichen (`User.webPassword`). Zunächst behoben durch einen
+   SHA256+Pepper-Hash (nicht mehr anzeigbar) — auf expliziten Wunsch des
+   Users noch am selben Tag durch **umkehrbare AES-256-GCM-Verschlüsselung**
+   ersetzt, damit ein Admin das Passwort in `MemberDetailView` wieder
+   einsehen kann. Feld heißt jetzt `User.webPasswordEncrypted`
+   (`WebPasswordEncryption.swift` / `encryptWebPassword`+
+   `decryptWebPassword` in `web/worker-app/src/index.js`, Schlüssel muss auf
+   beiden Seiten identisch sein — `WebPasswordEncryptionKey.swift` bzw.
+   Worker-Secret `WEB_PASSWORD_ENCRYPTION_KEY`). IV wird deterministisch aus
+   Schlüssel+Passwort abgeleitet (nicht zufällig), damit die
+   Exact-Match-CloudKit-Query fürs Login weiter funktioniert. Cross-
+   Kompatibilität Swift↔JS über einen gemeinsamen Testvektor verifiziert
+   (`WebPasswordEncryptionTests.swift`).
 6. **CloudKit-Umgebung der Web-Worker (Development vs. Production)** — beide
    Cloudflare Worker (`web/worker/`, `web/worker-app/`) sprechen aktuell
    bewusst `CLOUDKIT_ENVIRONMENT = "development"` an, nicht Production.

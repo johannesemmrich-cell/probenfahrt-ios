@@ -6,7 +6,7 @@
  * selbst signiertes Session-Cookie - siehe README für die Begründung.
  */
 
-import { databasePath, signAndPost, queryAllRecords } from "../../shared/cloudkit.js";
+import { databasePath, signAndPost, queryAllRecords, base64ToBytes, bytesToBase64 } from "../../shared/cloudkit.js";
 
 const SESSION_COOKIE_NAME = "session";
 // Kein Self-Service-Passwort-Reset vorgesehen - eine kurze TTL würde nur
@@ -40,28 +40,51 @@ function base64UrlDecode(str) {
 }
 
 /**
- * Muss byte-für-byte identisch zu WebPasswordHashing.hash in
- * Probenfahrt/Support/WebPasswordHashing.swift sein, sonst matcht ein in
- * der App gesetztes Passwort hier nie. Einfacher SHA-256+Pepper statt einer
- * langsamen KDF (PBKDF2/bcrypt) - angemessen fürs Bedrohungsmodell aus
- * BACKLOG #5 ("Dashboard-Zugriff sieht das Passwort direkt", nicht "Hash
- * wurde exfiltriert"), siehe Plan-Dokumentation.
+ * Muss byte-für-byte identisch zu WebPasswordEncryption in
+ * Probenfahrt/Support/WebPasswordEncryption.swift sein (AES-256-GCM,
+ * IV deterministisch aus SHA256("iv:"+key+":"+password) abgeleitet statt
+ * zufällig - damit bleibt "gleiches Passwort -> gleicher Chiffretext"
+ * erhalten, nötig für die Exact-Match-Query in findUserByEncryptedPassword/
+ * isWebPasswordTaken. Format: IV (12 Byte) || Ciphertext+Tag, base64 -
+ * entspricht CryptoKits AES.GCM.SealedBox.combined-Layout. Cross-Kompatibilität
+ * mit einem Swift-Testvektor verifiziert (WebPasswordEncryptionTests.swift).
  */
-async function hashWebPassword(env, password) {
-  const input = `${env.WEB_PASSWORD_PEPPER}:${password}`;
-  const bytes = new TextEncoder().encode(input);
-  const digestBuffer = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digestBuffer))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+async function aesKey(env) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(env.WEB_PASSWORD_ENCRYPTION_KEY));
+  return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
 }
 
-async function findUserByPasswordHash(env, hash) {
+async function derivedIv(env, password) {
+  const input = `iv:${env.WEB_PASSWORD_ENCRYPTION_KEY}:${password}`;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+  return new Uint8Array(digest).slice(0, 12);
+}
+
+async function encryptWebPassword(env, password) {
+  const key = await aesKey(env);
+  const iv = await derivedIv(env, password);
+  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(password));
+  const combined = new Uint8Array(iv.length + ciphertext.byteLength);
+  combined.set(iv, 0);
+  combined.set(new Uint8Array(ciphertext), iv.length);
+  return bytesToBase64(combined);
+}
+
+async function decryptWebPassword(env, encoded) {
+  const combined = base64ToBytes(encoded);
+  const iv = combined.slice(0, 12);
+  const ciphertext = combined.slice(12);
+  const key = await aesKey(env);
+  const plaintextBuffer = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
+  return new TextDecoder().decode(plaintextBuffer);
+}
+
+async function findUserByEncryptedPassword(env, encrypted) {
   const body = {
     query: {
       recordType: "User",
       filterBy: [
-        { fieldName: "webPasswordHash", comparator: "EQUALS", fieldValue: { value: hash, type: "STRING" } },
+        { fieldName: "webPasswordEncrypted", comparator: "EQUALS", fieldValue: { value: encrypted, type: "STRING" } },
       ],
     },
   };
@@ -168,8 +191,8 @@ async function handlePostLogin(request, env) {
   }
 
   try {
-    const hash = await hashWebPassword(env, password);
-    const user = await findUserByPasswordHash(env, hash);
+    const encrypted = await encryptWebPassword(env, password);
+    const user = await findUserByEncryptedPassword(env, encrypted);
     if (!user || !user.id) {
       // Kein Account-Lockout/CAPTCHA (siehe BACKLOG #5) - diese Verzögerung
       // ist nur ein billiger, zustandsloser Bremsklotz gegen naive

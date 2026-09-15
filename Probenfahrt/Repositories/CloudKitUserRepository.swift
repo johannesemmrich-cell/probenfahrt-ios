@@ -39,7 +39,7 @@ final class CloudKitUserRepository: UserRepository {
         static let accountKind = "accountKind"
         static let groupID = "groupID"
         static let createdAt = "createdAt"
-        static let webPasswordHash = "webPasswordHash"
+        static let webPasswordEncrypted = "webPasswordEncrypted"
     }
 
     // MARK: - Group seeding (not part of UserRepository — only MockDataSeeder
@@ -159,13 +159,13 @@ final class CloudKitUserRepository: UserRepository {
         // Verifikation am 2026-09-15 gefunden).
         let record = try await database.record(for: Self.userRecordID(id: id))
         let trimmed = password?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let hash = trimmed?.isEmpty == false ? WebPasswordHashing.hash(trimmed!) : nil
-        record[UserField.webPasswordHash] = hash as CKRecordValue?
+        let encrypted = trimmed?.isEmpty == false ? WebPasswordEncryption.encrypt(trimmed!) : nil
+        record[UserField.webPasswordEncrypted] = encrypted as CKRecordValue?
         _ = try await database.save(record)
     }
 
     func isWebPasswordTaken(_ password: String, excluding userID: UUID) async throws -> Bool {
-        let predicate = NSPredicate(format: "%K == %@", UserField.webPasswordHash, WebPasswordHashing.hash(password))
+        let predicate = NSPredicate(format: "%K == %@", UserField.webPasswordEncrypted, WebPasswordEncryption.encrypt(password))
         let query = CKQuery(recordType: RecordType.user, predicate: predicate)
         let records = try await allRecords(matching: query)
         return records.contains { record in
@@ -236,7 +236,7 @@ final class CloudKitUserRepository: UserRepository {
         record[UserField.accountKind] = user.accountKind.rawValue as CKRecordValue
         record[UserField.groupID] = user.groupID?.uuidString as CKRecordValue?
         record[UserField.createdAt] = user.createdAt as CKRecordValue
-        record[UserField.webPasswordHash] = user.webPasswordHash as CKRecordValue?
+        record[UserField.webPasswordEncrypted] = user.webPasswordEncrypted as CKRecordValue?
     }
 
     private static func user(from record: CKRecord) -> User {
@@ -252,7 +252,7 @@ final class CloudKitUserRepository: UserRepository {
             accountKind: accountKind,
             groupID: groupID,
             createdAt: (record[UserField.createdAt] as? Date) ?? .now,
-            webPasswordHash: record[UserField.webPasswordHash] as? String
+            webPasswordEncrypted: record[UserField.webPasswordEncrypted] as? String
         )
     }
 }

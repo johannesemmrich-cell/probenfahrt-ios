@@ -99,7 +99,7 @@ für dich erledigen, dafür gibt es keine API:
    **Development**-Umgebung automatisch mit den passenden Feldern.
 4. **Felder als "Queryable" markieren.** Im Dashboard unter Schema:
    - `TeamGroup`: `joinCode`, `pharmacyJoinCode`
-   - `User`: `groupID`, `webPasswordHash`
+   - `User`: `groupID`, `webPasswordEncrypted`
    - `SurveyDay`: `groupID`, `date`, `dayID`
    - `SurveyEntry`: `surveyDayID`, `groupID`
    - `ChatMessage`: `groupID`, `senderID`, `recipientID`
@@ -108,6 +108,15 @@ für dich erledigen, dafür gibt es keine API:
      Push-Abo für "Proben da" filtert live auf `hasSamples == 1`)
    Ohne das schlagen Abfragen mit einer klaren Fehlermeldung fehl ("field
    ... is not marked queryable") — dann hier nachtragen.
+   **Wichtig gelernt (2026-09-15):** CloudKit legt in Development automatisch
+   neue Record-*Typen* an, aber **keine neuen Felder an einem bereits
+   bestehenden Typ** — die legt nur eine App an, die tatsächlich einen Wert
+   dafür speichert. `webPasswordEncrypted` existiert deshalb noch nirgends
+   und muss zuerst manuell angelegt werden: Schema → Record Types → **User**
+   (den bestehenden Eintrag anklicken, **nicht** das "+" oben — das legt
+   einen neuen Record-*Typ* an!) → bei "Record Fields" das "+" → Name
+   `webPasswordEncrypted`, Typ String → Save Changes. Erst danach wie oben
+   unter Indexes als Queryable markierbar.
    **Zusätzlich für die Web-App (`web/worker-app/`):** `SurveyDay.date`
    muss zusätzlich als **Sortable** markiert sein — die Kalender-Ansicht
    filtert per Zeitraum (`GREATER_THAN_OR_EQUALS`/`LESS_THAN_OR_EQUALS`),
@@ -224,8 +233,10 @@ Passwort-Login zieht stattdessen auf eine komplett getrennte neue Subdomain
 (`app.mediproben.com`, `web/worker-app/`) um und führt dort in eine echte
 Web-App-Version der App (Umfragen/Kalender/Proben-Status/Admin-PDF-Export,
 ohne Team-Chat) statt nur in eine Begrüßung — siehe `web/worker-app/` sobald
-vorhanden. `webPassword` wird im Zuge dessen zu `webPasswordHash` (gehasht
-statt Klartext, siehe BACKLOG #5).
+vorhanden. `webPassword` wird im Zuge dessen zu `webPasswordEncrypted`
+(verschlüsselt statt Klartext, siehe BACKLOG #5) — ein Admin kann es sich
+in `MemberDetailView` wieder anzeigen lassen, es ist also keine Einbahn-
+straße wie ein Hash, sondern umkehrbar mit dem passenden Schlüssel.
 
 ### Web-App für Team-Mitglieder unter app.mediproben.com (web/worker-app/)
 
@@ -239,7 +250,9 @@ Apotheken-Route erreichbar ist.
 
 **Login-Modell:** kein Apple-ID/CloudKit-Session-Login, sondern ein von
 einem Admin pro Mitglied vergebenes Passwort (`MemberDetailView` in der
-App), gehasht als `User.webPasswordHash` gespeichert (siehe oben). Nach
+App), AES-256-verschlüsselt als `User.webPasswordEncrypted` gespeichert
+(siehe oben) — bewusst umkehrbar (nicht gehasht), damit ein Admin es sich
+wieder anzeigen lassen kann. Nach
 erfolgreichem Login setzt der Worker ein selbst signiertes, **host-only**
 Session-Cookie (HMAC-SHA256, 30 Tage, bei jedem gültigen Request gleitend
 verlängert — kein Self-Service-Passwort-Reset vorgesehen, deshalb keine
@@ -255,10 +268,10 @@ npx wrangler secret put CLOUDKIT_PRIVATE_KEY_PKCS8_BASE64
 #   Secrets sind aber pro Worker getrennt und müssen hier separat gesetzt werden
 npx wrangler secret put SESSION_HMAC_SECRET
 # ^ beliebiger zufälliger String, signiert nur das Session-Cookie
-npx wrangler secret put WEB_PASSWORD_PEPPER
-# ^ MUSS exakt WebPasswordPepper.value aus
-#   Probenfahrt/Support/WebPasswordPepper.swift entsprechen, sonst matcht
-#   kein in der App gesetztes Passwort hier jemals
+npx wrangler secret put WEB_PASSWORD_ENCRYPTION_KEY
+# ^ MUSS exakt WebPasswordEncryptionKey.value aus
+#   Probenfahrt/Support/WebPasswordEncryptionKey.swift entsprechen, sonst
+#   matcht kein in der App gesetztes Passwort hier jemals
 npx wrangler deploy
 ```
 

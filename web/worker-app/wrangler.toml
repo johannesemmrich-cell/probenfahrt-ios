@@ -22,10 +22,11 @@ binding = "ASSETS"
 # zusätzlich per `wrangler secret put` gesetzt werden, auch wenn der Wert
 # identisch zum anderen Worker ist:
 #   CLOUDKIT_PRIVATE_KEY_PKCS8_BASE64 (gleicher Server-to-Server-Key)
-#   SESSION_HMAC_SECRET (neu, nur für dieses Feature - signiert das
-#     Session-Cookie, NICHT identisch mit dem Passwort-Pepper)
-#   WEB_PASSWORD_PEPPER (neu, siehe BACKLOG #5 - Pepper fürs Hashen von
-#     User.webPasswordHash, muss mit dem Wert im iOS-Bundle übereinstimmen)
+#   SESSION_HMAC_SECRET (signiert das Session-Cookie, NICHT identisch mit
+#     dem Verschlüsselungs-Key)
+#   WEB_PASSWORD_ENCRYPTION_KEY (AES-256-Key für User.webPasswordEncrypted -
+#     muss exakt WebPasswordEncryptionKey.value im iOS-Bundle entsprechen,
+#     siehe Probenfahrt/Support/WebPasswordEncryptionKey.swift)
 [vars]
 CONTAINER_IDENTIFIER = "iCloud.com.johannesemmrich.probenfahrt"
 CLOUDKIT_ENVIRONMENT = "development"
