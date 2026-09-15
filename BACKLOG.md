@@ -63,5 +63,26 @@ ergänzt.
    `WEB_PASSWORD_PEPPER`). `MemberDetailView` kann das gesetzte Passwort
    dadurch nicht mehr anzeigen/vorbefüllen, nur noch neu setzen oder
    entfernen.
-6. (Platz für weitere Punkte, die im Gesprächsverlauf mit "Backlog:"
+6. **CloudKit-Umgebung der Web-Worker (Development vs. Production)** — beide
+   Cloudflare Worker (`web/worker/`, `web/worker-app/`) sprechen aktuell
+   bewusst `CLOUDKIT_ENVIRONMENT = "development"` an, nicht Production.
+   Funktioniert für den aktuellen Test-/Entwicklungsstand, aber sobald echte
+   Apotheken oder Team-Mitglieder über TestFlight/App Store (= Production)
+   arbeiten, laufen App und Web-Worker gegen zwei getrennte Datenbanken.
+   Muss vor einem echten Rollout bewusst entschieden und umgestellt werden
+   (siehe README "CloudKit-Setup" Punkt 6) — auf Wunsch des Users am
+   2026-09-15 explizit ins Backlog aufgenommen statt jetzt nebenbei
+   entschieden.
+
+   **Konkret bestätigt betroffen (2026-09-15):** Die Apotheke "Warendorf"
+   wurde über die TestFlight-App angelegt (= Production). Ihr QR-Code
+   funktioniert deshalb aktuell nicht — der Apotheken-Worker
+   (`web/worker/`) fragt Development ab, findet den Token dort nicht, die
+   Apotheke landet auf der Seite ohne eingeloggt zu werden. Kein Bug im
+   QR-Code/Worker-Code selbst (beides verifiziert korrekt), reiner
+   Umgebungs-Mismatch. Braucht zum Fixen: einen zweiten,
+   production-spezifischen CloudKit-Server-to-Server-Key (Keys sind pro
+   Umgebung getrennt) + `CLOUDKIT_ENVIRONMENT` in `web/worker/wrangler.toml`
+   auf `"production"` umstellen.
+7. (Platz für weitere Punkte, die im Gesprächsverlauf mit "Backlog:"
    markiert werden.)

@@ -26,7 +26,7 @@ except ImportError:
 # Allowlist statt SimpleHTTPRequestHandlers Default-Verhalten (liefert
 # sonst JEDE Datei im Arbeitsverzeichnis aus, inkl. eckey.pem/
 # server_config.py mit dem privaten CloudKit-Key!).
-ALLOWED_STATIC_PATHS = {"/", "/index.html"}
+ALLOWED_STATIC_PATHS = {"/", "/index.html", "/impressum.html", "/datenschutz.html"}
 
 
 def today_local():
@@ -60,7 +60,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if parsed.path == "/api/pharmacy":
             return self._handle_get_pharmacy(parsed)
         if parsed.path in ALLOWED_STATIC_PATHS:
-            self.path = "/index.html"
+            if parsed.path == "/":
+                self.path = "/index.html"
             return super().do_GET()
         self.send_error(404)
 
