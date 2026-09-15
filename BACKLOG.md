@@ -53,5 +53,16 @@ ergänzt.
      nahezu gleichzeitige Meldungen für dieselbe Apotheke+Tag können beide
      "existiert noch nicht" sehen und kollidieren (kein Datenverlust, aber
      eine der beiden Anfragen schlägt sichtbar fehl).
-5. (Platz für weitere Punkte, die im Gesprächsverlauf mit "Backlog:"
+5. **Web-Passwort (`User.webPassword`) wird im Klartext gespeichert und
+   verglichen** — von einer unabhängigen Verifikation am 2026-09-15
+   gefunden, bewusst nicht behoben, weil es genau demselben, bereits
+   dokumentierten Sicherheitsniveau wie der bestehende Gruppen-
+   Beitrittscode entspricht (siehe README.md "Test-Zugänge"). Jeder mit
+   CloudKit-Dashboard-Zugriff sieht das Passwort jedes Mitglieds direkt;
+   anders als beim geteilten Gruppen-Code ist das hier aber ein
+   personenbezogenes Zugangsdatum, nicht ein geteiltes Team-Geheimnis —
+   sollte spätestens dann gehasht werden, wenn das Web-Login-Feature
+   (aktuell nur Begrüßung, siehe README.md) über eine reine Anzeige
+   hinaus echte Funktionen bekommt.
+6. (Platz für weitere Punkte, die im Gesprächsverlauf mit "Backlog:"
    markiert werden.)
