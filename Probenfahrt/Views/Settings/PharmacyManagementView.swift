@@ -15,6 +15,7 @@ struct PharmacyManagementView: View {
     @State private var isShowingAddSheet = false
     @State private var errorMessage: String?
     @State private var isSaving = false
+    @State private var successPulse = 0
 
     private var samplesRepository: SamplesRepository { CloudKitSamplesRepository() }
     private var today: Date { SampleReport.normalizedDay(.now) }
@@ -90,6 +91,8 @@ struct PharmacyManagementView: View {
         }
         .task { await load() }
         .refreshable { await load() }
+        .sensoryFeedback(.success, trigger: successPulse)
+        .sensoryFeedback(.error, trigger: errorMessage) { _, newValue in newValue != nil }
     }
 
     @ViewBuilder
@@ -104,13 +107,17 @@ struct PharmacyManagementView: View {
         }
     }
 
+    /// Commits both fetches atomically on success — a partial failure must
+    /// not leave `locations` updated while `todaysReports` stays stale (or
+    /// vice versa).
     private func load() async {
         guard let groupID = currentUser.groupID else { return }
         errorMessage = nil
         do {
-            locations = try await samplesRepository.locations(groupID: groupID)
-            let reports = try await samplesRepository.reports(groupID: groupID, day: today)
-            todaysReports = Dictionary(uniqueKeysWithValues: reports.map { ($0.locationID, $0) })
+            let newLocations = try await samplesRepository.locations(groupID: groupID)
+            let newReports = try await samplesRepository.reports(groupID: groupID, day: today)
+            locations = newLocations
+            todaysReports = Dictionary(uniqueKeysWithValues: newReports.map { ($0.locationID, $0) })
         } catch {
             errorMessage = "Laden fehlgeschlagen: \(error.localizedDescription)"
         }
@@ -131,6 +138,7 @@ struct PharmacyManagementView: View {
                 usesQRCheckIn: usesQRCheckIn
             )
             await load()
+            successPulse += 1
         } catch {
             errorMessage = "Anlegen fehlgeschlagen: \(error.localizedDescription)"
         }
@@ -187,6 +195,7 @@ private struct PharmacyDetailView: View {
     @State private var qrImage: UIImage?
     @State private var isShowingDeleteConfirmation = false
     @State private var errorMessage: String?
+    @State private var successPulse = 0
 
     private var samplesRepository: SamplesRepository { CloudKitSamplesRepository() }
     private var checkInURLString: String { webLinkStore.checkInURL(token: location.token) }
@@ -336,6 +345,8 @@ private struct PharmacyDetailView: View {
         .onChange(of: webLinkStore.baseURL) {
             updateQRImage()
         }
+        .sensoryFeedback(.success, trigger: successPulse)
+        .sensoryFeedback(.error, trigger: errorMessage) { _, newValue in newValue != nil }
     }
 
     private func updateQRImage() {
@@ -346,15 +357,23 @@ private struct PharmacyDetailView: View {
         currentReport = try? await samplesRepository.report(locationID: location.id, day: SampleReport.normalizedDay(.now))
     }
 
+    /// Sets `currentReport` optimistically instead of waiting on a
+    /// write-then-refetch round trip (mirrors the same fix in
+    /// SurveyDayDetailView.toggleEntry/toggleLock); refreshing the parent
+    /// list's own status badges via `onChanged()` happens in the background
+    /// instead of blocking this screen's perceived responsiveness.
     private func setStatus(_ hasSamples: Bool) async {
         errorMessage = nil
+        let previousReport = currentReport
+        currentReport = SampleReport(locationID: location.id, groupID: location.groupID, day: SampleReport.normalizedDay(.now), hasSamples: hasSamples)
         isSaving = true
         defer { isSaving = false }
         do {
             try await samplesRepository.setHasSamples(hasSamples, locationID: location.id, day: SampleReport.normalizedDay(.now))
-            await loadReport()
-            await onChanged()
+            successPulse += 1
+            Task { await onChanged() }
         } catch {
+            currentReport = previousReport
             errorMessage = "Melden fehlgeschlagen: \(error.localizedDescription)"
         }
     }

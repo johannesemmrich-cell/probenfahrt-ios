@@ -22,6 +22,7 @@ struct MemberDetailView: View {
     @State private var period: StatPeriod = .week
     @State private var referenceDate = Date.now
     @State private var isShowingRemoveConfirmation = false
+    @State private var successPulse = 0
 
     private var userRepository: UserRepository { CloudKitUserRepository() }
     private var surveyRepository: SurveyRepository { CloudKitSurveyRepository() }
@@ -174,6 +175,9 @@ struct MemberDetailView: View {
         .navigationTitle(user.name)
         .navigationBarTitleDisplayMode(.inline)
         .task { await loadEntries() }
+        .sensoryFeedback(.success, trigger: successPulse)
+        .sensoryFeedback(.error, trigger: errorMessage) { _, newValue in newValue != nil }
+        .sensoryFeedback(.error, trigger: webPasswordErrorMessage) { _, newValue in newValue != nil }
         .confirmationDialog(
             "\(user.name) wirklich aus der Gruppe entfernen?",
             isPresented: $isShowingRemoveConfirmation,
@@ -236,6 +240,7 @@ struct MemberDetailView: View {
                 }
             }
             try await userRepository.setWebPassword(trimmed, for: user.id)
+            successPulse += 1
         } catch {
             // Vorher try? auf beiden Aufrufen - ein echter CloudKit-Fehler
             // (z.B. fehlende Write-Berechtigung, nicht als Queryable
@@ -247,20 +252,36 @@ struct MemberDetailView: View {
     }
 
     private func setViceAdmin(_ isOn: Bool) async {
-        try? await userRepository.setRole(id: user.id, role: isOn ? .viceAdmin : .member, bypassLastAdminGuard: false)
+        do {
+            try await userRepository.setRole(id: user.id, role: isOn ? .viceAdmin : .member, bypassLastAdminGuard: false)
+            successPulse += 1
+        } catch {
+            errorMessage = "Änderung fehlgeschlagen: \(error.localizedDescription)"
+        }
     }
 
     private func removeAdminStatus() async {
-        try? await userRepository.setRole(id: user.id, role: .member, bypassLastAdminGuard: true)
+        do {
+            try await userRepository.setRole(id: user.id, role: .member, bypassLastAdminGuard: true)
+            successPulse += 1
+        } catch {
+            errorMessage = "Änderung fehlgeschlagen: \(error.localizedDescription)"
+        }
     }
 
     private func promoteToHauptAdmin() async {
-        try? await userRepository.setRole(id: user.id, role: .admin, bypassLastAdminGuard: false)
+        do {
+            try await userRepository.setRole(id: user.id, role: .admin, bypassLastAdminGuard: false)
+            successPulse += 1
+        } catch {
+            errorMessage = "Änderung fehlgeschlagen: \(error.localizedDescription)"
+        }
     }
 
     private func remove() async {
         do {
             try await userRepository.deleteUser(id: user.id, bypassLastAdminGuard: isDeveloperOverride)
+            successPulse += 1
             onRemoved()
             dismiss()
         } catch UserRepositoryError.cannotRemoveLastAdmin {

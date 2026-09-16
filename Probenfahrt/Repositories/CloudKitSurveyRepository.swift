@@ -70,9 +70,9 @@ final class CloudKitSurveyRepository: SurveyRepository {
         return try await allRecords(matching: query).map(Self.entry(from:))
     }
 
-    func signIn(userID: UUID, dayID: UUID) async throws {
+    func signIn(userID: UUID, dayID: UUID, bypassLock: Bool) async throws {
         guard let day = try await fetchDay(id: dayID) else { return }
-        guard !day.isLocked else { throw SurveyRepositoryError.dayLocked }
+        guard bypassLock || !day.isLocked else { throw SurveyRepositoryError.dayLocked }
         let recordID = Self.entryRecordID(dayID: dayID, userID: userID)
         guard (try? await database.record(for: recordID)) == nil else { return }
         let entry = SurveyEntry(surveyDayID: dayID, userID: userID, groupID: day.groupID)

@@ -10,6 +10,7 @@ struct SurveysView: View {
     @State private var rowsByBlock: [Date: [SurveyDayRow]] = [:]
     @State private var users: [User] = []
     @State private var hasLoadedOnce = false
+    @State private var hapticPulse = 0
 
     private let surveyRepository: SurveyRepository = CloudKitSurveyRepository()
     private let userRepository: UserRepository = CloudKitUserRepository()
@@ -46,13 +47,19 @@ struct SurveysView: View {
             }
             .task { await load() }
             .refreshable { await load() }
+            .sensoryFeedback(.impact, trigger: hapticPulse)
         }
     }
 
+    /// Only ever replaces `blocks`/`rowsByBlock`/`users` on a fully successful
+    /// load, and never clears them beforehand or on failure — a transient
+    /// error (e.g. this `.task` re-firing after a NavigationStack pop hits a
+    /// brief network hiccup) must not blank out data that's still valid, or
+    /// the list visibly flashes empty before the next successful refresh.
     private func load() async {
         guard let groupID = currentUser.groupID else { return }
         do {
-            users = try await userRepository.allUsers(inGroup: groupID)
+            let newUsers = try await userRepository.allUsers(inGroup: groupID)
             let newBlocks = SurveyWeekWindow.currentWeekBlocks(from: .now)
             guard let start = newBlocks.first?.weekStart, let end = newBlocks.last?.weekEnd else { return }
             let days = try await surveyRepository.surveyDays(from: start, to: end, groupID: groupID)
@@ -68,11 +75,12 @@ struct SurveysView: View {
                     .sorted { $0.day.date < $1.day.date }
                 newRowsByBlock[block.weekStart] = rows
             }
+            users = newUsers
             blocks = newBlocks
             rowsByBlock = newRowsByBlock
         } catch {
-            blocks = []
-            rowsByBlock = [:]
+            // Keep showing the last known-good data instead of blanking the
+            // list on a transient reload failure.
         }
         hasLoadedOnce = true
         surveyBadge.markChecked()
@@ -85,11 +93,12 @@ struct SurveysView: View {
     private func toggleSignIn(row: SurveyDayRow) async {
         let isSignedIn = row.entries.contains { $0.userID == currentUser.id }
         applyOptimisticToggle(dayID: row.day.id, isSignedIn: isSignedIn)
+        hapticPulse += 1
         do {
             if isSignedIn {
                 try await surveyRepository.signOut(userID: currentUser.id, dayID: row.day.id)
             } else {
-                try await surveyRepository.signIn(userID: currentUser.id, dayID: row.day.id)
+                try await surveyRepository.signIn(userID: currentUser.id, dayID: row.day.id, bypassLock: false)
             }
         } catch {
             await load()

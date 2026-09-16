@@ -33,10 +33,10 @@ struct PastSurveysView: View {
                         // load()), so SurveyDayCard's quick-toggle never
                         // renders for it (shouldShowQuickToggle is false for
                         // past days regardless of role) — admins instead use
-                        // its "Verwalten" link. onToggle is consequently
-                        // unreachable; kept as a no-op to satisfy the shared
-                        // component's signature rather than forking the view.
-                        SurveyDayCard(row: row, users: users, currentUser: currentUser) {}
+                        // its "Verwalten" link, including on locked days.
+                        SurveyDayCard(row: row, users: users, currentUser: currentUser) {} onRowChanged: { updatedRow in
+                            replaceRow(updatedRow)
+                        }
                     }
                 } header: {
                     FahrplanHeader(block: block)
@@ -48,10 +48,13 @@ struct PastSurveysView: View {
         .refreshable { await load() }
     }
 
+    /// Only ever replaces `blocks`/`rowsByBlock`/`users` on a fully
+    /// successful load, and never clears them beforehand or on failure —
+    /// mirrors the same fix in SurveysView.load().
     private func load() async {
         guard let groupID = currentUser.groupID else { return }
         do {
-            users = try await userRepository.allUsers(inGroup: groupID)
+            let newUsers = try await userRepository.allUsers(inGroup: groupID)
             let newBlocks = SurveyWeekWindow.pastWeekBlocks(from: .now)
             guard let start = newBlocks.last?.weekStart, let end = newBlocks.first?.weekEnd else { return }
             let days = try await surveyRepository.existingSurveyDays(from: start, to: end, groupID: groupID)
@@ -67,12 +70,26 @@ struct PastSurveysView: View {
                     .sorted { $0.day.date < $1.day.date }
                 newRowsByBlock[block.weekStart] = rows
             }
+            users = newUsers
             blocks = newBlocks
             rowsByBlock = newRowsByBlock
         } catch {
-            blocks = []
-            rowsByBlock = [:]
+            // Keep showing the last known-good data instead of blanking the
+            // list on a transient reload failure.
         }
         hasLoadedOnce = true
+    }
+
+    /// Called when SurveyDayDetailView changes a day (lock state or admin-
+    /// managed participants, including on a locked day) so this list
+    /// reflects it immediately instead of only after a manual pull-to-refresh.
+    private func replaceRow(_ updatedRow: SurveyDayRow) {
+        for (weekStart, rows) in rowsByBlock {
+            guard let index = rows.firstIndex(where: { $0.day.id == updatedRow.day.id }) else { continue }
+            var updatedRows = rows
+            updatedRows[index] = updatedRow
+            rowsByBlock[weekStart] = updatedRows
+            return
+        }
     }
 }

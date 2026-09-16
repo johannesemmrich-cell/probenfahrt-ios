@@ -14,6 +14,10 @@ struct SurveyDayCard: View {
         row.entries.contains { $0.userID == currentUser.id }
     }
 
+    private var isLockedWithEntries: Bool {
+        row.day.isLocked && !row.entries.isEmpty
+    }
+
     private var initials: [String] {
         row.entries.compactMap { entry in
             users.first { $0.id == entry.userID }?.abbreviation
@@ -42,9 +46,15 @@ struct SurveyDayCard: View {
                     }
 
                     if row.day.isLocked {
-                        Label(lockLabel, systemImage: "lock.fill")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        HStack(spacing: 4) {
+                            Label(lockLabel, systemImage: "lock.fill")
+                            if isLockedWithEntries {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(.red)
+                            }
+                        }
+                        .font(.caption)
+                        .foregroundStyle(isLockedWithEntries ? .orange : .secondary)
                     } else if initials.isEmpty {
                         Text("Noch niemand eingetragen")
                             .font(.subheadline)
@@ -76,9 +86,16 @@ struct SurveyDayCard: View {
                     }
                     .buttonStyle(.bordered)
                 }
+            } else if isEffectiveAdmin(user: currentUser, adminPreview: adminPreview, devMode: devMode) {
+                NavigationLink {
+                    SurveyDayDetailView(row: row, users: users, currentUser: currentUser, onRowChanged: onRowChanged)
+                } label: {
+                    Text("Verwalten")
+                }
+                .buttonStyle(.bordered)
             }
         }
-        .opacity(row.day.isLocked ? 0.5 : 1)
+        .opacity(row.day.isLocked && row.entries.isEmpty ? 0.5 : 1)
         .padding(.vertical, 4)
     }
 

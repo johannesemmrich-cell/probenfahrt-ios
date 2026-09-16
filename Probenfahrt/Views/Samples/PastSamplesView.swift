@@ -15,8 +15,13 @@ struct PastSamplesView: View {
 
     private var samplesRepository: SamplesRepository { CloudKitSamplesRepository() }
 
+    /// `reportsByDay` is keyed by `SampleReport.normalizedDay`-anchored
+    /// values (UTC midnight of the Berlin day), but `day` here comes from
+    /// `SampleWeekWindow.pastWeekBlocks`, which is anchored at
+    /// device-local midnight — a different instant for the same calendar
+    /// day. Re-normalize before every lookup so the two sides actually meet.
     private func hasReports(on day: Date) -> Bool {
-        !(reportsByDay[day] ?? []).isEmpty
+        !(reportsByDay[SampleReport.normalizedDay(day)] ?? []).isEmpty
     }
 
     private var nonEmptyBlocks: [SampleWeekWindow.WeekBlock] {
@@ -32,7 +37,7 @@ struct PastSamplesView: View {
             ForEach(nonEmptyBlocks) { block in
                 Section {
                     ForEach(block.days.filter(hasReports), id: \.self) { day in
-                        SampleDayCard(day: day, locations: locations, reports: reportsByDay[day] ?? [])
+                        SampleDayCard(day: day, locations: locations, reports: reportsByDay[SampleReport.normalizedDay(day)] ?? [])
                     }
                 } header: {
                     SampleWeekHeader(block: block)
@@ -44,10 +49,14 @@ struct PastSamplesView: View {
         .refreshable { await load() }
     }
 
+    /// Only replaces `locations`/`blocks`/`reportsByDay` on a fully
+    /// successful load, and never clears them beforehand or on failure — a
+    /// transient error on pull-to-refresh must not blank out previously
+    /// shown weeks (mirrors the same fix in SurveysView/SamplesListView).
     private func load() async {
         guard let groupID = currentUser.groupID else { return }
         do {
-            locations = try await samplesRepository.locations(groupID: groupID)
+            let newLocations = try await samplesRepository.locations(groupID: groupID)
             // Blocks are ordered most-recent-first (see SampleWeekWindowTests),
             // so the earliest day is the last block's first day and the
             // latest is the first block's last day.
@@ -61,11 +70,12 @@ struct PastSamplesView: View {
                     newReportsByDay[report.day, default: []].append(report)
                 }
             }
+            locations = newLocations
             blocks = newBlocks
             reportsByDay = newReportsByDay
         } catch {
-            blocks = []
-            reportsByDay = [:]
+            // Keep showing the last known-good weeks instead of blanking
+            // them on a transient reload failure.
         }
         hasLoadedOnce = true
     }

@@ -5,7 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Probenfahrt · Web-App</title>
 <style>
-  :root { color-scheme: light dark; }
+  :root {
+    color-scheme: light dark;
+    --primary-green: #1e7e34;
+    --error-red: #c0392b;
+  }
   * { box-sizing: border-box; }
   body {
     margin: 0;
@@ -20,11 +24,12 @@
     padding: 24px;
   }
   @media (prefers-color-scheme: dark) {
+    :root { --primary-green: #34c759; --error-red: #ff3b30; }
     body { background: #000; color: #f2f2f7; }
     .card { background: #1c1c1e; }
     .muted { color: #8e8e93; }
     button.secondary, button.tab, button.cal-mode-btn { background: #2c2c2e; color: #f2f2f7; border-color: #3a3a3c; }
-    button.tab.active, button.cal-mode-btn.active { background: #34c759; color: #fff; }
+    button.tab.active, button.cal-mode-btn.active { background: var(--primary-green); color: #fff; }
     input[type="password"], input[type="text"] { background: #1c1c1e; color: #f2f2f7; border-color: #3a3a3c; }
     .row { border-color: #3a3a3c; }
   }
@@ -53,7 +58,7 @@
     -webkit-tap-highlight-color: transparent;
   }
   .card:not(.app) button { display: block; width: 100%; margin-bottom: 12px; }
-  button.primary { background: #34c759; color: #fff; }
+  button.primary { background: var(--primary-green); color: #fff; }
   button.secondary { background: #f2f2f7; color: #1c1c1e; border: 1px solid #d1d1d6; }
   button.icon { padding: 8px 14px; }
   input[type="password"], input[type="text"] {
@@ -70,12 +75,12 @@
   label:has(input[type="checkbox"]) { display: block; margin-bottom: 12px; }
   h3 { font-size: 1rem; margin: 20px 0 8px; }
   h3:first-child { margin-top: 0; }
-  .error { color: #ff3b30; font-size: 0.95rem; }
-  .brand { font-size: 0.75rem; color: #a1a1a6; margin-top: 28px; text-align: center; }
+  .error { color: var(--error-red); font-size: 0.95rem; }
+  .brand { font-size: 0.8125rem; color: #a1a1a6; margin-top: 28px; text-align: center; }
   .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
   .tabs { display: flex; gap: 8px; margin-bottom: 20px; }
   button.tab { flex: 1; background: #f2f2f7; color: #1c1c1e; border: 1px solid #d1d1d6; }
-  button.tab.active { background: #34c759; color: #fff; border-color: #34c759; }
+  button.tab.active { background: var(--primary-green); color: #fff; border-color: var(--primary-green); }
   .nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
   .row {
     display: flex;
@@ -87,13 +92,13 @@
   .row:last-child { border-bottom: none; }
   .row .who { font-size: 0.9rem; color: #6e6e73; }
   .lock { color: #ff9500; font-size: 0.85rem; }
-  .yes { color: #34c759; }
+  .yes { color: var(--primary-green); }
   .no { color: #6e6e73; }
-  .warn { color: #ff3b30; }
+  .warn { color: var(--error-red); }
   .survey-covered { background: rgba(52,199,89,0.12); border-radius: 8px; padding-left: 6px; padding-right: 6px; }
-  .current-badge { background: #34c759; color: #fff; font-size: 0.7rem; padding: 2px 8px; border-radius: 8px; font-weight: 600; }
+  .current-badge { background: var(--primary-green); color: #fff; font-size: 0.7rem; padding: 2px 8px; border-radius: 8px; font-weight: 600; }
   button.cal-mode-btn { flex: 1; background: #f2f2f7; color: #1c1c1e; border: 1px solid #d1d1d6; }
-  button.cal-mode-btn.active { background: #34c759; color: #fff; border-color: #34c759; }
+  button.cal-mode-btn.active { background: var(--primary-green); color: #fff; border-color: var(--primary-green); }
   .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-top: 8px; }
   .cal-head { text-align: center; font-size: 0.75rem; color: #6e6e73; padding: 4px 0; }
   .cal-cell { aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 8px; font-size: 0.8rem; }
@@ -102,13 +107,13 @@
   .cal-daynum { font-weight: 600; }
   .cal-initials { font-size: 0.6rem; color: #6e6e73; }
   .cal-lock { font-size: 0.7rem; }
-  .legal-links { text-align: center; margin-top: 56px; padding-top: 16px; font-size: 0.75rem; }
+  .legal-links { text-align: center; margin-top: 56px; padding-top: 16px; font-size: 0.8125rem; }
   .legal-links a { color: #a1a1a6; text-decoration: none; }
   .legal-links a:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
-  <div class="card" id="card">
+  <div class="card" id="card" tabindex="-1">
     <div class="muted" id="loading">Lade…</div>
   </div>
   <div class="legal-links"><a href="/impressum">Impressum</a> · <a href="/datenschutz">Datenschutz</a></div>
@@ -887,7 +892,7 @@
       '<label><input type="checkbox" id="viceAdminToggle" ' + (detail.role === "viceAdmin" ? "checked" : "") + ' /> Vice-Admin</label>'
     ) : "";
     const removeButton = (detail.isFullAdminViewing && detail.id !== me.id) ? (
-      '<button class="secondary" id="removeMemberBtn" style="color:#ff3b30">Aus Gruppe entfernen</button>'
+      '<button class="secondary" id="removeMemberBtn" style="color:var(--error-red)">Aus Gruppe entfernen</button>'
     ) : "";
 
     return backToMembersHtml(
@@ -1130,7 +1135,7 @@
       '<h3>Heute manuell melden</h3>' +
       '<button class="primary" id="reportYesBtn" ' + (detail.hasSamples === true ? "disabled" : "") + '>Ja, Proben vorhanden</button>' +
       '<button class="secondary" id="reportNoBtn" ' + (detail.hasSamples === false ? "disabled" : "") + '>Keine Proben</button>' +
-      '<button class="secondary" id="deletePharmacyBtn" style="color:#ff3b30">Apotheke löschen</button>' +
+      '<button class="secondary" id="deletePharmacyBtn" style="color:var(--error-red)">Apotheke löschen</button>' +
       '<p class="error" id="pharmacyActionError" style="display:none"></p>'
     );
   }

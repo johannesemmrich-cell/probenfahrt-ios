@@ -94,7 +94,7 @@ enum MockDataSeeder {
 
         for (dayOffset, day) in days.enumerated() {
             for index in attendeeIndices(for: dayOffset) {
-                try? await surveyRepository.signIn(userID: users[index].id, dayID: day.id)
+                try? await surveyRepository.signIn(userID: users[index].id, dayID: day.id, bypassLock: false)
             }
         }
     }

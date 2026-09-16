@@ -26,7 +26,10 @@ protocol SurveyRepository {
     /// round trip — views that render a whole week block use this instead of
     /// looping, so opening/refreshing Umfragen isn't one network call per day.
     func entries(forDayIDs dayIDs: [UUID]) async throws -> [SurveyEntry]
-    func signIn(userID: UUID, dayID: UUID) async throws
+    /// `bypassLock`: regular self-service sign-in/out must respect a locked
+    /// day (pass `false`); the admin "Teilnehmer verwalten" panel is allowed
+    /// to edit a locked day on purpose (pass `true`).
+    func signIn(userID: UUID, dayID: UUID, bypassLock: Bool) async throws
     func signOut(userID: UUID, dayID: UUID) async throws
     func setLocked(_ locked: Bool, reason: String?, dayID: UUID) async throws
     func entriesWithDates(inMonth month: Int, year: Int, groupID: UUID) async throws -> [SurveyEntryWithDate]

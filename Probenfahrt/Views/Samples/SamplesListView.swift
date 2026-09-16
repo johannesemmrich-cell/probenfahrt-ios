@@ -61,9 +61,19 @@ struct SamplesListView: View {
         }
     }
 
+    /// Only overwrites existing data on success — a transient failure of
+    /// either fetch should leave the previously shown list intact rather
+    /// than blanking it. (Fetching both concurrently via `async let` would
+    /// need `SamplesRepository` to be `Sendable`, which its `@MainActor`
+    /// isolation deliberately isn't — not worth the architectural change for
+    /// two calls that are already cheap.)
     private func load() async {
         guard let groupID = currentUser.groupID else { return }
-        locations = (try? await samplesRepository.locations(groupID: groupID)) ?? []
-        reports = (try? await samplesRepository.reports(groupID: groupID, day: SampleReport.normalizedDay(.now))) ?? []
+        if let newLocations = try? await samplesRepository.locations(groupID: groupID) {
+            locations = newLocations
+        }
+        if let newReports = try? await samplesRepository.reports(groupID: groupID, day: SampleReport.normalizedDay(.now)) {
+            reports = newReports
+        }
     }
 }

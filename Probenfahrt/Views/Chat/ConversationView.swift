@@ -15,6 +15,14 @@ struct ConversationView: View {
     @State private var messages: [ChatMessage] = []
     @State private var draft = ""
     @State private var didInitialScroll = false
+    @State private var sendHapticPulse = 0
+    @State private var errorMessage: String?
+
+    /// Caps how much history is kept in view state after a load — CloudKit
+    /// itself has no Sortable index on `createdAt` (would need a manual
+    /// CloudKit Dashboard change to query "last N" directly), so this only
+    /// trims what SwiftUI has to render/diff, not the network fetch itself.
+    private static let displayedMessageLimit = 100
 
     private let chatRepository: ChatRepository = CloudKitChatRepository()
 
@@ -43,7 +51,12 @@ struct ConversationView: View {
                     }
                     .padding()
                 }
-                .onChange(of: messages.count) {
+                .onChange(of: messages.last?.id) {
+                    // Keyed on the last message's id, not messages.count: once
+                    // a conversation sits at the displayedMessageLimit cap,
+                    // send() appends then trims back to the same count in one
+                    // synchronous stretch, so count alone nets to no change
+                    // and would silently stop triggering this at all.
                     guard let lastID = messages.last?.id else { return }
                     // Don't force-scroll the initial historical load: when the
                     // content is shorter than the viewport, anchor:.bottom
@@ -56,6 +69,13 @@ struct ConversationView: View {
                     }
                     withAnimation { proxy.scrollTo(lastID, anchor: .bottom) }
                 }
+            }
+
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+                    .padding(.horizontal)
             }
 
             Divider()
@@ -75,6 +95,8 @@ struct ConversationView: View {
         }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+        .sensoryFeedback(.impact(weight: .light), trigger: sendHapticPulse)
+        .sensoryFeedback(.error, trigger: errorMessage) { _, newValue in newValue != nil }
         .task { await load() }
     }
 
@@ -100,11 +122,15 @@ struct ConversationView: View {
 
     private func load() async {
         guard let groupID = currentUser.groupID else { return }
+        let fetched: [ChatMessage]?
         switch mode {
         case .group:
-            messages = (try? await chatRepository.groupMessages(groupID: groupID)) ?? []
+            fetched = try? await chatRepository.groupMessages(groupID: groupID)
         case .direct(let partner):
-            messages = (try? await chatRepository.directMessages(groupID: groupID, between: currentUser.id, and: partner.id)) ?? []
+            fetched = try? await chatRepository.directMessages(groupID: groupID, between: currentUser.id, and: partner.id)
+        }
+        if let fetched {
+            messages = Array(fetched.suffix(Self.displayedMessageLimit))
         }
         unreadMessages.markRead(conversationKey: conversationKey)
         await unreadMessages.refresh(currentUser: currentUser)
@@ -115,18 +141,32 @@ struct ConversationView: View {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         draft = ""
+        errorMessage = nil
 
         // Append locally right away instead of waiting on the CloudKit round
         // trip + a full history reload — the send below still happens, just
-        // without blocking the bubble from appearing.
+        // without blocking the bubble from appearing. Rolled back by id (not
+        // "remove last") on failure, since further messages may have arrived
+        // by the time the network call resolves.
         let recipientID: UUID? = { if case .direct(let partner) = mode { return partner.id }; return nil }()
-        messages.append(ChatMessage(groupID: groupID, senderID: currentUser.id, recipientID: recipientID, text: text))
+        let optimisticMessage = ChatMessage(groupID: groupID, senderID: currentUser.id, recipientID: recipientID, text: text)
+        messages.append(optimisticMessage)
+        if messages.count > Self.displayedMessageLimit {
+            messages.removeFirst(messages.count - Self.displayedMessageLimit)
+        }
+        sendHapticPulse += 1
 
-        switch mode {
-        case .group:
-            try? await chatRepository.sendGroupMessage(groupID: groupID, senderID: currentUser.id, text: text)
-        case .direct(let partner):
-            try? await chatRepository.sendDirectMessage(groupID: groupID, senderID: currentUser.id, recipientID: partner.id, text: text)
+        do {
+            switch mode {
+            case .group:
+                try await chatRepository.sendGroupMessage(groupID: groupID, senderID: currentUser.id, text: text)
+            case .direct(let partner):
+                try await chatRepository.sendDirectMessage(groupID: groupID, senderID: currentUser.id, recipientID: partner.id, text: text)
+            }
+        } catch {
+            messages.removeAll { $0.id == optimisticMessage.id }
+            draft = text
+            errorMessage = "Nachricht konnte nicht gesendet werden. Bitte erneut versuchen."
         }
     }
 }

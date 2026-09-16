@@ -13,6 +13,8 @@ struct PharmacySamplesView: View {
     @State private var location: SampleLocation?
     @State private var todaysReport: SampleReport?
     @State private var isSaving = false
+    @State private var successPulse = 0
+    @State private var errorMessage: String?
 
     private var samplesRepository: SamplesRepository { CloudKitSamplesRepository() }
     private var today: Date { SampleReport.normalizedDay(.now) }
@@ -62,11 +64,21 @@ struct PharmacySamplesView: View {
                         .foregroundStyle(.secondary)
                 }
 
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+                }
+
                 Spacer()
                 Spacer()
             }
             .navigationTitle(currentUser.name)
             .developerFeedbackOverlay(isActive: devMode.isActive, screen: "Proben (Apotheke)", feature: "Status", element: "Buttons")
+            .sensoryFeedback(.success, trigger: successPulse)
+            .sensoryFeedback(.error, trigger: errorMessage) { _, newValue in newValue != nil }
             .task { await load() }
         }
     }
@@ -78,11 +90,23 @@ struct PharmacySamplesView: View {
         todaysReport = try? await samplesRepository.report(locationID: location.id, day: today)
     }
 
+    /// Sets `todaysReport` optimistically instead of waiting on a
+    /// write-then-two-more-calls `load()` round trip (mirrors the same fix
+    /// in SurveyDayDetailView.toggleEntry/toggleLock) — rolled back on
+    /// failure.
     private func setStatus(_ hasSamples: Bool) async {
         guard let location else { return }
+        errorMessage = nil
+        let previousReport = todaysReport
+        todaysReport = SampleReport(locationID: location.id, groupID: location.groupID, day: today, hasSamples: hasSamples)
         isSaving = true
         defer { isSaving = false }
-        try? await samplesRepository.setHasSamples(hasSamples, locationID: location.id, day: today)
-        await load()
+        do {
+            try await samplesRepository.setHasSamples(hasSamples, locationID: location.id, day: today)
+            successPulse += 1
+        } catch {
+            todaysReport = previousReport
+            errorMessage = "Melden fehlgeschlagen: \(error.localizedDescription)"
+        }
     }
 }

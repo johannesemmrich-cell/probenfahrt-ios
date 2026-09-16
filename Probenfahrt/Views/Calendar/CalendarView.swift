@@ -74,10 +74,14 @@ struct CalendarView: View {
         }
     }
 
+    /// Only replaces `rows`/`users` on a fully successful load, never clears
+    /// them beforehand or on failure — this `.task(id:)` re-fires on every
+    /// month/week navigation tap, so a transient failure must not blank the
+    /// whole grid.
     private func load() async {
         guard let groupID = currentUser.groupID else { return }
         do {
-            users = try await userRepository.allUsers(inGroup: groupID)
+            let newUsers = try await userRepository.allUsers(inGroup: groupID)
             let calendar = Calendar.current
             let interval: DateInterval?
             switch viewMode {
@@ -92,9 +96,10 @@ struct CalendarView: View {
                 grouping: try await surveyRepository.entries(forDayIDs: days.map(\.id)),
                 by: \.surveyDayID
             )
+            users = newUsers
             rows = days.map { day in SurveyDayRow(day: day, entries: entriesByDayID[day.id] ?? []) }
         } catch {
-            rows = []
+            // Keep showing the last known-good grid instead of blanking it.
         }
     }
 }

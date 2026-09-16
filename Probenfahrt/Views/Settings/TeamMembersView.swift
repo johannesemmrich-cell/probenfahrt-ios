@@ -48,7 +48,8 @@ struct TeamMembersView: View {
 
     private func load() async {
         guard let groupID = currentUser.groupID else { return }
-        let all = (try? await userRepository.allUsers(inGroup: groupID)) ?? []
-        users = all.filter { $0.accountKind == .labTeam }
+        if let all = try? await userRepository.allUsers(inGroup: groupID) {
+            users = all.filter { $0.accountKind == .labTeam }
+        }
     }
 }

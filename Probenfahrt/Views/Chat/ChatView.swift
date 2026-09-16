@@ -47,6 +47,8 @@ struct ChatView: View {
 
     private func load() async {
         guard let groupID = currentUser.groupID else { return }
-        users = (try? await userRepository.allUsers(inGroup: groupID)) ?? []
+        if let fetched = try? await userRepository.allUsers(inGroup: groupID) {
+            users = fetched
+        }
     }
 }

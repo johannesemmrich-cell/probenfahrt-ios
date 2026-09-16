@@ -64,6 +64,9 @@ struct SamplesReportView: View {
         }
     }
 
+    /// Only replaces `lines`/`pdfURL` on a fully successful load — this
+    /// `.task(id:)` re-fires on every month-navigation tap, so a transient
+    /// failure must not blank an already-generated report.
     private func load() async {
         guard let groupID = currentUser.groupID else { return }
         let calendar = Calendar.current
@@ -72,12 +75,12 @@ struct SamplesReportView: View {
         do {
             let locations = try await samplesRepository.locations(groupID: groupID)
             let reports = try await samplesRepository.reports(groupID: groupID, inMonth: month, year: year)
-            lines = SamplesReportGenerator.generate(reports: reports, locations: locations)
-            let data = PDFReportRenderer.renderSamplesReport(title: "Proben-Auswertung \(monthTitle)", lines: lines)
+            let newLines = SamplesReportGenerator.generate(reports: reports, locations: locations)
+            let data = PDFReportRenderer.renderSamplesReport(title: "Proben-Auswertung \(monthTitle)", lines: newLines)
+            lines = newLines
             pdfURL = writeTempPDF(data: data)
         } catch {
-            lines = []
-            pdfURL = nil
+            // Keep showing the last known-good report instead of blanking it.
         }
     }
 

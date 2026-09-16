@@ -12,6 +12,8 @@ struct SettingsView: View {
     @State private var abbreviation: String
     @State private var errorMessage: String?
     @State private var isShowingLeaveConfirmation = false
+    @State private var leaveErrorMessage: String?
+    @State private var successPulse = 0
     @State private var versionTapCount = 0
     @State private var showDeveloperUnlock = false
     @State private var adminCode = ""
@@ -49,6 +51,9 @@ struct SettingsView: View {
                 Section {
                     Button("Gruppe verlassen", role: .destructive) {
                         isShowingLeaveConfirmation = true
+                    }
+                    if let leaveErrorMessage {
+                        Text(leaveErrorMessage).font(.footnote).foregroundStyle(.red)
                     }
                 }
 
@@ -143,12 +148,16 @@ struct SettingsView: View {
             }
             .navigationTitle("Einstellungen")
             .developerFeedbackOverlay(isActive: devMode.isActive, screen: "Einstellungen", feature: "Profil", element: "Formular")
+            .sensoryFeedback(.success, trigger: successPulse)
+            .sensoryFeedback(.error, trigger: errorMessage) { _, newValue in newValue != nil }
+            .sensoryFeedback(.error, trigger: adminCodeError) { _, newValue in newValue != nil }
+            .sensoryFeedback(.error, trigger: leaveErrorMessage) { _, newValue in newValue != nil }
             .confirmationDialog(
                 "Gruppe wirklich verlassen?",
                 isPresented: $isShowingLeaveConfirmation,
                 titleVisibility: .visible
             ) {
-                Button("Verlassen", role: .destructive) { session.signOut() }
+                Button("Verlassen", role: .destructive) { Task { await leaveGroup() } }
                 Button("Abbrechen", role: .cancel) {}
             }
             .sheet(isPresented: $showDeveloperUnlock) {
@@ -252,8 +261,13 @@ struct SettingsView: View {
             }
         }
 
-        try? await userRepository.updateUser(id: currentUser.id, name: trimmedName, abbreviation: trimmedAbbreviation)
-        onCurrentUserUpdated(currentUser)
+        do {
+            try await userRepository.updateUser(id: currentUser.id, name: trimmedName, abbreviation: trimmedAbbreviation)
+            successPulse += 1
+            onCurrentUserUpdated(currentUser)
+        } catch {
+            errorMessage = "Speichern fehlgeschlagen: \(error.localizedDescription)"
+        }
     }
 
     private func submitAdminCode() async {
@@ -262,8 +276,30 @@ struct SettingsView: View {
             adminCodeError = "Falscher Code."
             return
         }
-        try? await userRepository.setRole(id: currentUser.id, role: .admin, bypassLastAdminGuard: false)
-        adminCode = ""
-        onCurrentUserUpdated(currentUser)
+        do {
+            try await userRepository.setRole(id: currentUser.id, role: .admin, bypassLastAdminGuard: false)
+            adminCode = ""
+            successPulse += 1
+            onCurrentUserUpdated(currentUser)
+        } catch {
+            adminCodeError = "Speichern fehlgeschlagen: \(error.localizedDescription)"
+        }
+    }
+
+    /// Mirrors the existing admin "Aus Gruppe entfernen" path
+    /// (MemberDetailView.remove → deleteUser) instead of just signing out
+    /// locally — otherwise the CloudKit User record lingers forever and
+    /// permanently blocks this name/Kürzel from being reused on rejoin
+    /// (isAbbreviationTaken checks every record ever created, active or not).
+    private func leaveGroup() async {
+        leaveErrorMessage = nil
+        do {
+            try await userRepository.deleteUser(id: currentUser.id, bypassLastAdminGuard: false)
+            session.signOut()
+        } catch UserRepositoryError.cannotRemoveLastAdmin {
+            leaveErrorMessage = "Du bist der letzte Admin der Gruppe. Ernenne zuerst jemand anderen zum Admin, bevor du die Gruppe verlässt."
+        } catch {
+            leaveErrorMessage = "Gruppe verlassen ist fehlgeschlagen. Bitte erneut versuchen."
+        }
     }
 }

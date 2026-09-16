@@ -417,6 +417,22 @@ function berlinMidnightMs(dateString) {
   return utcGuess - hourInBerlin * 60 * 60 * 1000;
 }
 
+/**
+ * SampleReport.day muss denselben Zeitpunkt liefern wie todayLocal() im
+ * Apotheken-Check-in-Worker (web/worker/src/index.js) und
+ * SampleReport.normalizedDay() in der App: Berlin-Kalendertag, aber auf
+ * UTC-Mitternacht verankert - NICHT auf echte Berlin-lokale Mitternacht wie
+ * berlinMidnightMs() (das bleibt unverändert, weil SurveyDay.date eine
+ * eigene, davon unabhängige Anker-Konvention hat). Sonst schreibt dieser
+ * Worker Proben-Meldungen mit einem anderen Zeitstempel als App und
+ * Apotheken-Worker für denselben Kalendertag, und Gleichheits-Queries
+ * (findSampleReportsForDay) matchen nie.
+ */
+function berlinDayUTCMidnightMs(dateString) {
+  const [y, m, d] = dateString.split("-").map(Number);
+  return Date.UTC(y, m - 1, d);
+}
+
 function addDaysToDateString(dateString, days) {
   const [y, m, d] = dateString.split("-").map(Number);
   const date = new Date(Date.UTC(y, m - 1, d));
@@ -1020,7 +1036,7 @@ async function handleGetSamples(request, env) {
   const dateString = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : berlinDateString(Date.now());
 
   try {
-    const dayMs = berlinMidnightMs(dateString);
+    const dayMs = berlinDayUTCMidnightMs(dateString);
     const [locations, reports] = await Promise.all([
       findLocationsForGroup(env, session.gid),
       findSampleReportsForDay(env, session.gid, dayMs),
@@ -1113,7 +1129,7 @@ async function handleGetPharmacies(request, env) {
 
   try {
     const today = berlinDateString(Date.now());
-    const dayMs = berlinMidnightMs(today);
+    const dayMs = berlinDayUTCMidnightMs(today);
     const [locations, reports] = await Promise.all([
       findLocationsForGroup(env, session.gid),
       findSampleReportsForDay(env, session.gid, dayMs),
@@ -1216,7 +1232,7 @@ async function handlePostPharmacyReport(request, env, pharmacyID) {
     if (!location) return jsonResponse(404, { error: "Apotheke nicht gefunden" });
 
     const today = berlinDateString(Date.now());
-    const dayMs = berlinMidnightMs(today);
+    const dayMs = berlinDayUTCMidnightMs(today);
     const recordName = reportRecordName(location.id, today);
     const existing = await getSampleReport(env, recordName);
     await saveSampleReport(env, recordName, session.gid, location.id, hasSamples, dayMs, existing !== null);

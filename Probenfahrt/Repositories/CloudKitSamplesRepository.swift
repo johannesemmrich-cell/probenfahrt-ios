@@ -137,6 +137,14 @@ final class CloudKitSamplesRepository: SamplesRepository {
         if let existing = try? await database.record(for: recordID) {
             existing[ReportField.hasSamples] = hasSamples ? 1 : 0
             existing[ReportField.reportedAt] = Date.now as CKRecordValue
+            // Re-stamp `day` on every write, not just hasSamples/reportedAt —
+            // self-heals a record whose `day` still holds a stale anchor
+            // from before the UTC-midnight normalization change (its
+            // deterministic ID keeps matching since that's built from the
+            // Y-M-D string, not this field), so the exact-match `day == %@`
+            // queries in reports(groupID:day:)/reports(groupID:from:to:)
+            // start finding it again the next time someone reports for it.
+            existing[ReportField.day] = normalizedDay as CKRecordValue
             _ = try await database.save(existing)
             return
         }
@@ -200,7 +208,7 @@ final class CloudKitSamplesRepository: SamplesRepository {
     }
 
     private static func reportRecordID(locationID: UUID, day: Date) -> CKRecord.ID {
-        CKRecord.ID(recordName: "report-\(locationID.uuidString)-\(CloudKitQuerying.localDayString(for: day))")
+        CKRecord.ID(recordName: "report-\(locationID.uuidString)-\(SampleReport.dayString(day))")
     }
 
     // MARK: - CKRecord <-> model mapping
