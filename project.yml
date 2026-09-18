@@ -18,7 +18,11 @@ settings:
     IPHONEOS_DEPLOYMENT_TARGET: "26.0"
     TARGETED_DEVICE_FAMILY: "1"
     MARKETING_VERSION: "1.0"
-    CURRENT_PROJECT_VERSION: "1"
+    # War schon "1" beim ersten TestFlight-Test zu viert (Stand 2026-09-04) -
+    # App Store Connect lehnt einen erneuten Upload mit derselben
+    # Version+Build-Kombination ab, deshalb hier vor dem nächsten Upload
+    # hochgezählt statt es in Xcode/App Store Connect zu vergessen.
+    CURRENT_PROJECT_VERSION: "2"
     CODE_SIGN_STYLE: Automatic
     # Fest eingetragen (HENEMM GmbH), statt es jedes Mal manuell in Xcode
     # unter Signing & Capabilities auszuwählen — sonst setzt jedes
