@@ -13,6 +13,7 @@ struct SurveyDayDetailView: View {
     @State private var errorMessage: String?
     @State private var entryHapticPulse = 0
     @State private var monthEntries: [SurveyEntryWithDate] = []
+    @State private var hasLoadedMonthEntries = false
 
     private let surveyRepository: SurveyRepository = CloudKitSurveyRepository()
 
@@ -73,7 +74,7 @@ struct SurveyDayDetailView: View {
                                     Task { await toggleEntry(for: user) }
                                 }
                             } preview: {
-                                MemberMonthlyTripsPreview(userName: user.name, tripCount: tripCountThisMonth(for: user))
+                                MemberMonthlyTripsPreview(userName: user.name, tripCount: hasLoadedMonthEntries ? tripCountThisMonth(for: user) : nil)
                             }
                         }
                     }
@@ -118,12 +119,13 @@ struct SurveyDayDetailView: View {
         .sensoryFeedback(.impact, trigger: entryHapticPulse)
         .sensoryFeedback(trigger: day.isLocked) { _, isLocked in isLocked ? .warning : .impact }
         .sensoryFeedback(.error, trigger: errorMessage) { _, newValue in newValue != nil }
-        .task {
+        .task(id: isAdmin) {
             guard isAdmin, let groupID = currentUser.groupID else { return }
             let calendar = Calendar.current
             let month = calendar.component(.month, from: .now)
             let year = calendar.component(.year, from: .now)
             monthEntries = (try? await surveyRepository.entriesWithDates(inMonth: month, year: year, groupID: groupID)) ?? []
+            hasLoadedMonthEntries = true
         }
     }
 
@@ -175,15 +177,21 @@ struct SurveyDayDetailView: View {
 
 private struct MemberMonthlyTripsPreview: View {
     let userName: String
-    let tripCount: Int
+    let tripCount: Int?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(userName)
                 .font(.headline)
-            Text("\(tripCount) \(tripCount == 1 ? "Fahrt" : "Fahrten") diesen Monat")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+            if let tripCount {
+                Text("\(tripCount) \(tripCount == 1 ? "Fahrt" : "Fahrten") diesen Monat")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Lädt …")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
         }
         .padding()
     }

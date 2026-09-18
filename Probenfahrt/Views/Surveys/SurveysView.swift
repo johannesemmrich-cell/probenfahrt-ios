@@ -29,7 +29,11 @@ struct SurveysView: View {
                             } onRowChanged: { updatedRow in
                                 replaceRow(updatedRow)
                             }
-                            .listRowBackground(row.entries.count == 1 ? Color.green.opacity(0.15) : nil)
+                            .listRowBackground(
+                                row.day.isLocked && !row.entries.isEmpty ? Color.orange.opacity(0.15)
+                                : !row.entries.isEmpty ? Color.green.opacity(0.15)
+                                : nil
+                            )
                         }
                     } header: {
                         FahrplanHeader(block: block, isCurrent: index == 0)

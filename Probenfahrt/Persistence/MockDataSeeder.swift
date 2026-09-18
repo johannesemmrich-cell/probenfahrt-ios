@@ -20,6 +20,10 @@ enum MockDataSeeder {
     static let testGroupJoinCode = "LABOR2026"
     static let testGroupPharmacyJoinCode = "PROBEN2026"
 
+    /// Dedicated join code for the onboarding "Demo-Modus" button — never
+    /// shown to users, only used internally by `ensureDemoGroupExists()`.
+    static let demoGroupJoinCode = "apple-review-demo"
+
     static func ensureCloudTestDataIfNeeded() async {
         let userRepository = CloudKitUserRepository()
         guard let group = try? await userRepository.ensureGroupExists(
@@ -55,6 +59,25 @@ enum MockDataSeeder {
         await seedChatMessages(groupID: group.id, users: users)
         print("✅ MockDataSeeder: Fertig — Testdaten vollständig angelegt.")
         #endif
+    }
+
+    /// Dedicated TeamGroup for the Demo-Modus onboarding path (App Review /
+    /// first look) — idempotent find-or-create like the real test group
+    /// above, but never `#if DEBUG`-gated: it has to exist in Release/
+    /// TestFlight builds too, since that's exactly when a reviewer would use
+    /// it. Starts empty, same as any real new team — a reviewer's own
+    /// actions (signing up for a day, sending a chat message) populate it.
+    static func ensureDemoGroupExists() async -> TeamGroup? {
+        let userRepository = CloudKitUserRepository()
+        guard let group = try? await userRepository.ensureGroupExists(
+            name: "Demo-Team",
+            joinCode: demoGroupJoinCode,
+            pharmacyJoinCode: "\(demoGroupJoinCode)-pharmacy"
+        ) else {
+            print("⚠️ MockDataSeeder: Demo-Gruppe konnte nicht angelegt/gefunden werden (CloudKit nicht erreichbar?).")
+            return nil
+        }
+        return group
     }
 
     #if DEBUG

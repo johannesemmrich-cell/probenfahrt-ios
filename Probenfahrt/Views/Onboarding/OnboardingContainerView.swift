@@ -18,6 +18,7 @@ struct OnboardingContainerView: View {
     @State private var pendingGroupID: UUID?
     @State private var errorMessage: String?
     @State private var isSubmitting = false
+    @State private var isDemoFlow = false
 
     private var userRepository: UserRepository { CloudKitUserRepository() }
     private var samplesRepository: SamplesRepository { CloudKitSamplesRepository() }
@@ -77,6 +78,16 @@ struct OnboardingContainerView: View {
             .tint(PartnerBrand.yellow)
             .controlSize(.large)
             .disabled(code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
+
+            Button("Demo-Modus ausprobieren") {
+                errorMessage = nil
+                isDemoFlow = true
+                step = .labIdentity
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .disabled(isSubmitting)
         }
     }
 
@@ -84,7 +95,9 @@ struct OnboardingContainerView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Wie heißt du?")
                 .font(.title2.bold())
-            Text("Name und ein eindeutiges Kürzel, unter dem dich das Team wiedererkennt.")
+            Text(isDemoFlow
+                 ? "Optional im Demo-Modus — du kannst auch ohne Namen fortfahren."
+                 : "Name und ein eindeutiges Kürzel, unter dem dich das Team wiedererkennt.")
                 .foregroundStyle(.secondary)
 
             TextField("Vollständiger Name", text: $name)
@@ -101,7 +114,7 @@ struct OnboardingContainerView: View {
             Spacer()
 
             Button {
-                Task { await joinAsLabTeam() }
+                Task { await (isDemoFlow ? joinDemo() : joinAsLabTeam()) }
             } label: {
                 if isSubmitting {
                     ProgressView().frame(maxWidth: .infinity)
@@ -112,9 +125,18 @@ struct OnboardingContainerView: View {
             .buttonStyle(.borderedProminent)
             .tint(PartnerBrand.yellow)
             .controlSize(.large)
-            .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                      || abbreviation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            .disabled((!isDemoFlow && (name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                      || abbreviation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
                       || isSubmitting)
+
+            if isDemoFlow {
+                Button("Ohne Namen fortfahren") {
+                    Task { await joinDemo() }
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .disabled(isSubmitting)
+            }
 
             backButton
         }
@@ -159,6 +181,7 @@ struct OnboardingContainerView: View {
             code = ""
             pendingGroupID = nil
             errorMessage = nil
+            isDemoFlow = false
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
@@ -238,6 +261,41 @@ struct OnboardingContainerView: View {
                 return
             }
             let user = try await userRepository.createUser(name: trimmedName, abbreviation: trimmedAbbreviation, groupID: groupID)
+            session.setCurrentUser(id: user.id)
+        } catch {
+            errorMessage = "Etwas ist schiefgelaufen: \(error.localizedDescription)"
+        }
+    }
+
+    /// Demo path (see README "Demo-Modus"): skips the join-code step
+    /// entirely and always lands in a dedicated, isolated demo TeamGroup —
+    /// never the real group real testers join via LABOR2026 — so App-Review
+    /// testers can't see or affect real team data. Name/Kürzel are optional;
+    /// a generic default is used when left blank so "skip" always works.
+    private func joinDemo() async {
+        errorMessage = nil
+        isSubmitting = true
+        defer { isSubmitting = false }
+        guard let demoGroup = await MockDataSeeder.ensureDemoGroupExists() else {
+            errorMessage = "Demo-Modus ist gerade nicht erreichbar. Bitte später erneut versuchen."
+            return
+        }
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedAbbreviation = abbreviation.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalName = trimmedName.isEmpty ? "Apple Tester" : trimmedName
+        let baseAbbreviation = trimmedAbbreviation.isEmpty ? "AT" : trimmedAbbreviation
+        var finalAbbreviation = baseAbbreviation
+        do {
+            var attempt = 0
+            while try await userRepository.isAbbreviationTaken(finalAbbreviation, inGroup: demoGroup.id) {
+                attempt += 1
+                guard attempt <= 5 else {
+                    errorMessage = "Demo-Modus ist gerade stark ausgelastet. Bitte gleich noch einmal versuchen."
+                    return
+                }
+                finalAbbreviation = "\(baseAbbreviation)\(Int.random(in: 100...999))"
+            }
+            let user = try await userRepository.createUser(name: finalName, abbreviation: finalAbbreviation, groupID: demoGroup.id)
             session.setCurrentUser(id: user.id)
         } catch {
             errorMessage = "Etwas ist schiefgelaufen: \(error.localizedDescription)"

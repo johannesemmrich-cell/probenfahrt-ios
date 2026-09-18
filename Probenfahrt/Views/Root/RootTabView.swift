@@ -2,7 +2,6 @@ import SwiftUI
 
 struct RootTabView: View {
     @Environment(SessionStore.self) private var session
-    @Environment(DevModeStore.self) private var devMode
     @Environment(UnreadMessagesStore.self) private var unreadMessages
     @Environment(SurveySignupBadgeStore.self) private var surveyBadge
     @Environment(\.scenePhase) private var scenePhase
@@ -12,7 +11,7 @@ struct RootTabView: View {
     @State private var isShowingFeatureOnboarding = false
 
     private var effectiveAccountKind: AccountKind {
-        devMode.isPharmacyModeActive ? .pharmacy : (currentUser?.accountKind ?? .labTeam)
+        currentUser?.accountKind ?? .labTeam
     }
 
     var body: some View {
@@ -61,11 +60,6 @@ struct RootTabView: View {
                 self.currentUser = updated
             })
             .tabItem { Label("Einstellungen", systemImage: "gearshape") }
-
-            if devMode.isPharmacyTabPreviewActive {
-                PharmacySamplesView(currentUser: currentUser)
-                    .tabItem { Label("Proben (Test)", systemImage: "cross.vial.fill") }
-            }
         }
     }
 

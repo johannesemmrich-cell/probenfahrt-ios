@@ -24,16 +24,12 @@ struct SettingsView: View {
     private let buildNumber = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
 
     private var userRepository: UserRepository { CloudKitUserRepository() }
-    private var samplesRepository: SamplesRepository { CloudKitSamplesRepository() }
 
     private var isAdmin: Bool { isEffectiveAdmin(user: currentUser, adminPreview: adminPreview, devMode: devMode) }
     private var isFullAdmin: Bool { Probenfahrt.isFullAdmin(user: currentUser, adminPreview: adminPreview, devMode: devMode) }
 
-    /// Effective, not just the real account — DevMode's full "Apotheken-Modus"
-    /// switch (see RootTabView) shrinks Einstellungen the same way it shrinks
-    /// the tab bar, so the way back (Entwicklung-Section) stays reachable.
     private var isPharmacyAccount: Bool {
-        devMode.isPharmacyModeActive || currentUser.accountKind == .pharmacy
+        currentUser.accountKind == .pharmacy
     }
 
     init(currentUser: User, onCurrentUserUpdated: @escaping (User) -> Void) {
@@ -101,21 +97,6 @@ struct SettingsView: View {
                     if devMode.isActive {
                         NavigationLink("Entwicklermodus") {
                             DeveloperModeView()
-                        }
-
-                        if !isPharmacyAccount {
-                            Toggle("Proben-Tab (Apotheke) als Extra-Tab", isOn: Binding(
-                                get: { devMode.isPharmacyTabPreviewActive },
-                                set: { newValue in
-                                    devMode.isPharmacyTabPreviewActive = newValue
-                                    Task { await cleanupPharmacyPreviewLocationIfNeeded() }
-                                }
-                            ))
-                        }
-
-                        Button(devMode.isPharmacyModeActive ? "Zu Standard-Modus wechseln" : "Zu Apotheken-Modus wechseln") {
-                            devMode.isPharmacyModeActive.toggle()
-                            Task { await cleanupPharmacyPreviewLocationIfNeeded() }
                         }
                     }
 
@@ -220,18 +201,6 @@ struct SettingsView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-    }
-
-    /// Once neither DevMode pharmacy-preview mechanism is active anymore,
-    /// remove the SampleLocation they created under this real lab-team
-    /// user's identity — otherwise it lingers forever, unfiltered, in the
-    /// whole team's real Proben tab. Pharmacy accounts never see these
-    /// toggles, so any location owned by a labTeam user's id can only have
-    /// come from one of these two previews.
-    private func cleanupPharmacyPreviewLocationIfNeeded() async {
-        guard !devMode.isPharmacyTabPreviewActive, !devMode.isPharmacyModeActive else { return }
-        guard currentUser.accountKind == .labTeam else { return }
-        try? await samplesRepository.deleteLocationIfOwned(by: currentUser.id)
     }
 
     private func handleVersionTap() {

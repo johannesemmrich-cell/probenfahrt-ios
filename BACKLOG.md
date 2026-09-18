@@ -42,10 +42,6 @@ ergänzt.
      Fehleranzeige/Ladezustand, wenn CloudKit/iCloud nicht erreichbar ist
      (`try?`-verschluckte Fehler) — vor der CloudKit-Umstellung war dieser
      Pfad rein lokal und konnte praktisch nicht fehlschlagen.
-   - `SettingsView.cleanupPharmacyPreviewLocationIfNeeded()` (DevMode-
-     Apotheken-Vorschau) löscht die Test-Location nur best-effort
-     (`try?`) — schlägt der Netzwerk-Delete fehl, bleibt der Test-Datensatz
-     dauerhaft und team-sichtbar im echten Proben-Tab stehen.
    - Weitere Stellen (`SamplesListView` u.a.) unterscheiden nicht zwischen
      "wirklich keine Daten" und "Laden fehlgeschlagen" — beides sieht in
      der UI gleich aus.

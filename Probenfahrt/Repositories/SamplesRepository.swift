@@ -3,9 +3,7 @@ import Foundation
 @MainActor
 protocol SamplesRepository {
     func locations(groupID: UUID) async throws -> [SampleLocation]
-    /// The location a pharmacy account manages itself, creating it on first
-    /// use (also used by the DevMode "Proben (Test)" preview tab for a
-    /// lab-team account, so it always has something to toggle).
+    /// The location a pharmacy account manages itself, creating it on first use.
     func findOrCreateLocation(ownerUserID: UUID, groupID: UUID, name: String) async throws -> SampleLocation
     /// Admin-created location with no owning user account at all. If
     /// `usesQRCheckIn`, it's meant for the QR-code web check-in path
@@ -30,12 +28,6 @@ protocol SamplesRepository {
     /// one network round-trip per day (up to 56 for its 8-week window).
     func reports(groupID: UUID, from: Date, to: Date) async throws -> [SampleReport]
     func setHasSamples(_ hasSamples: Bool, locationID: UUID, day: Date) async throws
-    /// Cleans up a location created via `findOrCreateLocation` (and all of
-    /// its reports) once it's no longer needed — e.g. when a DevMode
-    /// pharmacy-preview toggle (see SettingsView) is switched back off, so
-    /// the preview doesn't leave a permanent, team-visible entry under the
-    /// tester's real name.
-    func deleteLocationIfOwned(by ownerUserID: UUID) async throws
     /// Admin-triggered delete of a location and all of its reports (e.g.
     /// from "Apotheken verwalten") — `ownerUserID` must be passed through
     /// unchanged from the SampleLocation being deleted, since it's part of

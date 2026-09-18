@@ -155,20 +155,6 @@ final class CloudKitSamplesRepository: SamplesRepository {
         _ = try await database.save(record)
     }
 
-    func deleteLocationIfOwned(by ownerUserID: UUID) async throws {
-        let recordID = Self.ownerLocationRecordID(ownerUserID: ownerUserID)
-        guard let locationRecord = try? await database.record(for: recordID) else { return }
-        let location = Self.location(from: locationRecord)
-        let predicate = NSPredicate(format: "%K == %@", ReportField.locationID, location.id.uuidString)
-        let query = CKQuery(recordType: RecordType.report, predicate: predicate)
-        if let reportRecords = try? await allRecords(matching: query) {
-            for reportRecord in reportRecords {
-                try? await database.deleteRecord(withID: reportRecord.recordID)
-            }
-        }
-        try? await database.deleteRecord(withID: recordID)
-    }
-
     func deleteLocation(id: UUID, ownerUserID: UUID?) async throws {
         let recordID = ownerUserID.map(Self.ownerLocationRecordID(ownerUserID:)) ?? Self.locationRecordID(id: id)
         let predicate = NSPredicate(format: "%K == %@", ReportField.locationID, id.uuidString)
@@ -178,8 +164,7 @@ final class CloudKitSamplesRepository: SamplesRepository {
                 try? await database.deleteRecord(withID: reportRecord.recordID)
             }
         }
-        // Unlike deleteLocationIfOwned's best-effort cleanup, this is an
-        // explicit admin action — a failure here should surface as a real
+        // Explicit admin action — a failure here should surface as a real
         // error in the UI, not fail silently.
         try await database.deleteRecord(withID: recordID)
     }

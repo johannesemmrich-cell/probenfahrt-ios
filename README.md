@@ -345,6 +345,15 @@ beide Umgebungen sind komplett getrennt, es gibt also keine Überschneidung.
   (Proben, Einstellungen); im Proben-Tab gibt's ausschließlich die Auswahl
   "Ja, wir haben Proben" / "Keine Proben" für heute — das Ergebnis erscheint
   dann im normalen Proben-Tab des Laborteams.
+- **Demo-Modus (Onboarding, für App Review/erstes Ausprobieren):** Button
+  "Demo-Modus ausprobieren" auf dem Code-Bildschirm — überspringt den
+  Beitrittscode komplett, Name/Kürzel sind optional (Default "Apple
+  Tester"/"AT", bei Kürzel-Kollision automatisch neu durchnummeriert).
+  Landet **nie** in der echten LABOR2026-Gruppe, sondern in einer eigenen,
+  isolierten `TeamGroup` ("Demo-Team", interner Join-Code
+  `MockDataSeeder.demoGroupJoinCode`, nie im UI gezeigt) — die startet leer
+  und wird bewusst nicht `#if DEBUG`-gated angelegt, existiert also auch in
+  Release/TestFlight-Builds, anders als die Fixtures oben.
 - **Entwicklermodus-Bypass im Onboarding:** Statt eines Beitrittscodes das
   Dev-Mode-Passwort (`Isg#45krusgL.`) eingeben → man landet direkt im
   Standard-Laborteam-Account (wiederverwendbarer Testnutzer "Entwickler",
@@ -366,15 +375,6 @@ beide Umgebungen sind komplett getrennt, es gibt also keine Überschneidung.
   ein 👎-Feedback-Overlay auf allen Tabs und einen Feedback-/To-Do-
   Bereich in den Einstellungen (analog zu Sunwakes Entwicklermodus). Bei
   aktivem Entwicklermodus gibt's zusätzlich in "Entwicklung":
-  - Toggle "Proben-Tab (Apotheke) als Extra-Tab" — blendet die
-    Apotheken-Proben-Ansicht als 6. Tab ein, ohne den Account-Typ zu wechseln.
-  - Button "Zu Apotheken-Modus wechseln" — schaltet die komplette App
-    (Tabs + Einstellungen) probeweise auf die 2-Tab-Apotheken-Ansicht um;
-    ein gleichwertiger Button schaltet von dort wieder zurück.
-  - Beide Vorschauen legen dafür einen eigenen `SampleLocation`-Testeintrag
-    unter dem eigenen Namen an; sobald beide Vorschau-Schalter wieder aus
-    sind, wird dieser Testeintrag automatisch gelöscht (sonst bliebe er
-    dauerhaft und für das ganze Team sichtbar im echten Proben-Tab stehen).
   - Toggle "Alle Admin-Rechte (Haupt-Admin)" — wie "Als Admin anzeigen" in
     den Einstellungen, nur innerhalb des Entwicklermodus statt daneben.
   - Zwei Übersichts-Sections listen alle Haupt-Admin- und alle

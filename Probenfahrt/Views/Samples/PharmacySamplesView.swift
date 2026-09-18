@@ -3,9 +3,7 @@ import SwiftUI
 /// The entire Proben experience for a self-service pharmacy/supplier account
 /// (AccountKind.pharmacy): today's date, and one tap to say whether they
 /// currently have samples. Nothing else — the lab team sees the result in
-/// the regular SamplesListView. Also used by DevModeStore's
-/// "Proben (Test)"-Tab preview, in which case `currentUser` is a lab-team
-/// account and its own location is created on demand.
+/// the regular SamplesListView.
 struct PharmacySamplesView: View {
     let currentUser: User
 
