@@ -65,8 +65,10 @@ enum MockDataSeeder {
     /// first look) — idempotent find-or-create like the real test group
     /// above, but never `#if DEBUG`-gated: it has to exist in Release/
     /// TestFlight builds too, since that's exactly when a reviewer would use
-    /// it. Starts empty, same as any real new team — a reviewer's own
-    /// actions (signing up for a day, sending a chat message) populate it.
+    /// it. Seeded once with a few colleagues, survey sign-ups (incl. a locked
+    /// day), chat messages, and a sample location — Apple App Review
+    /// (Guideline 2.1(a), 2026-09-22) rejected the first submission because
+    /// an empty demo account didn't let them verify the app's features.
     static func ensureDemoGroupExists() async -> TeamGroup? {
         let userRepository = CloudKitUserRepository()
         guard let group = try? await userRepository.ensureGroupExists(
@@ -77,16 +79,88 @@ enum MockDataSeeder {
             print("⚠️ MockDataSeeder: Demo-Gruppe konnte nicht angelegt/gefunden werden (CloudKit nicht erreichbar?).")
             return nil
         }
+
+        guard let existingUsers = try? await userRepository.allUsers(inGroup: group.id), existingUsers.isEmpty else {
+            return group
+        }
+
+        var users: [User] = []
+        for seed in demoSeedUsers {
+            guard let user = try? await userRepository.createSeedUser(
+                name: seed.name, abbreviation: seed.abbreviation, role: .member, groupID: group.id
+            ) else { continue }
+            users.append(user)
+        }
+        guard users.count == demoSeedUsers.count else { return group }
+
+        await seedDemoSurveyDays(groupID: group.id, users: users)
+        await seedDemoChatMessages(groupID: group.id, users: users)
+        await seedDemoSampleLocation(groupID: group.id)
+
         return group
     }
 
-    #if DEBUG
     private struct SeedUser {
         let name: String
         let abbreviation: String
         let role: UserRole
     }
 
+    private static let demoSeedUsers: [SeedUser] = [
+        SeedUser(name: "Anna Weber", abbreviation: "AW", role: .member),
+        SeedUser(name: "Markus Schulz", abbreviation: "MS", role: .member),
+        SeedUser(name: "Laura Fischer", abbreviation: "LF", role: .member),
+    ]
+
+    /// Populates 3 upcoming survey days so a reviewer sees every visual state
+    /// without creating data themselves: one signup (green), two signups (red
+    /// "!" + green row), and one signup on a day that's then locked (orange
+    /// row + caption).
+    private static func seedDemoSurveyDays(groupID: UUID, users: [User]) async {
+        guard users.count >= 3 else { return }
+        let surveyRepository = CloudKitSurveyRepository()
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: .now)
+        guard let rangeEnd = calendar.date(byAdding: .day, value: 14, to: today) else { return }
+        guard let days = try? await surveyRepository.surveyDays(from: today, to: rangeEnd, groupID: groupID), days.count >= 3 else { return }
+
+        try? await surveyRepository.signIn(userID: users[0].id, dayID: days[0].id, bypassLock: false)
+
+        try? await surveyRepository.signIn(userID: users[0].id, dayID: days[1].id, bypassLock: false)
+        try? await surveyRepository.signIn(userID: users[1].id, dayID: days[1].id, bypassLock: false)
+
+        try? await surveyRepository.signIn(userID: users[2].id, dayID: days[2].id, bypassLock: false)
+        try? await surveyRepository.setLocked(true, reason: "Wird an diesem Tag nicht gefahren", dayID: days[2].id)
+    }
+
+    private static func seedDemoChatMessages(groupID: UUID, users: [User]) async {
+        guard users.count >= 2 else { return }
+        let chatRepository = CloudKitChatRepository()
+        let now = Date.now
+        func at(hoursAgo: Double) -> Date { now.addingTimeInterval(-hoursAgo * 3600) }
+
+        let groupMessages: [(User, String, Double)] = [
+            (users[0], "Willkommen im Demo-Team! Hier tragt ihr euch für Fahrten ein.", 5),
+            (users[1], "Danke, sieht gut aus 🙂", 4.5),
+            (users[0], "Ich trag mich für morgen ein.", 2),
+        ]
+        for (user, text, hoursAgo) in groupMessages {
+            try? await chatRepository.seedMessage(groupID: groupID, senderID: user.id, recipientID: nil, text: text, createdAt: at(hoursAgo: hoursAgo))
+        }
+
+        try? await chatRepository.seedMessage(groupID: groupID, senderID: users[1].id, recipientID: users[0].id, text: "Kannst du morgen für mich übernehmen?", createdAt: at(hoursAgo: 1.5))
+        try? await chatRepository.seedMessage(groupID: groupID, senderID: users[0].id, recipientID: users[1].id, text: "Klar, kein Problem!", createdAt: at(hoursAgo: 1))
+    }
+
+    private static func seedDemoSampleLocation(groupID: UUID) async {
+        let samplesRepository = CloudKitSamplesRepository()
+        guard let location = try? await samplesRepository.createLocation(
+            groupID: groupID, name: "Muster-Apotheke", address: "Musterstraße 1, 12345 Musterstadt", usesQRCheckIn: false
+        ) else { return }
+        try? await samplesRepository.setHasSamples(true, locationID: location.id, day: .now)
+    }
+
+    #if DEBUG
     private static let seedUsers: [SeedUser] = [
         SeedUser(name: "Johannes Emmrich", abbreviation: "JE", role: .admin),
         SeedUser(name: "Anna Weber", abbreviation: "AW", role: .member),
