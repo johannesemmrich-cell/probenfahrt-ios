@@ -3,21 +3,22 @@ import Testing
 
 struct AdminCodeTests {
     @Test func matchesExactCode() {
-        #expect(AdminCode.matches("Admin"))
+        #expect(AdminCode.matches(AdminCode.value))
     }
 
     @Test func matchesCaseInsensitively() {
-        #expect(AdminCode.matches("admin"))
-        #expect(AdminCode.matches("ADMIN"))
+        #expect(AdminCode.matches(AdminCode.value.lowercased()))
+        #expect(AdminCode.matches(AdminCode.value.uppercased()))
     }
 
     @Test func matchesWithSurroundingWhitespace() {
-        #expect(AdminCode.matches("  Admin  "))
+        #expect(AdminCode.matches("  \(AdminCode.value)  "))
     }
 
     @Test func rejectsWrongCode() {
         #expect(!AdminCode.matches("Vice-Admin"))
-        #expect(!AdminCode.matches("Admin1"))
+        #expect(!AdminCode.matches("\(AdminCode.value)1"))
+        #expect(!AdminCode.matches(String(AdminCode.value.dropLast())))
     }
 
     @Test func rejectsEmptyInput() {

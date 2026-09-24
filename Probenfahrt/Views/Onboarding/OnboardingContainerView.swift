@@ -296,7 +296,7 @@ struct OnboardingContainerView: View {
                 finalAbbreviation = "\(baseAbbreviation)\(Int.random(in: 100...999))"
             }
             let user = try await userRepository.createUser(name: finalName, abbreviation: finalAbbreviation, groupID: demoGroup.id)
-            session.setCurrentUser(id: user.id)
+            session.setCurrentUser(id: user.id, isDemo: true)
         } catch {
             errorMessage = "Etwas ist schiefgelaufen: \(error.localizedDescription)"
         }

@@ -47,7 +47,7 @@ final class AdminRolesUITests: XCTestCase {
         let codeField = app.textFields["Code"]
         XCTAssertTrue(codeField.waitForExistence(timeout: 5))
         codeField.tap()
-        codeField.typeText("Admin")
+        codeField.typeText("IbdH-A26!")
         app.buttons["Bestätigen"].tap()
 
         // Promotion is real/persisted (not just a preview) — Admin section appears.

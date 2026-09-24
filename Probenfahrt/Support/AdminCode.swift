@@ -7,7 +7,7 @@ import Foundation
 /// auth. Not a secret worth hashing yet; the value itself is expected to
 /// change once this becomes more than a prototype mechanism.
 enum AdminCode {
-    static let value = "Admin"
+    static let value = "IbdH-A26!"
 
     static func matches(_ input: String) -> Bool {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)

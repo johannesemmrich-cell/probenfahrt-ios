@@ -112,25 +112,27 @@ enum MockDataSeeder {
         SeedUser(name: "Laura Fischer", abbreviation: "LF", role: .member),
     ]
 
-    /// Populates 3 upcoming survey days so a reviewer sees every visual state
-    /// without creating data themselves: one signup (green), two signups (red
-    /// "!" + green row), and one signup on a day that's then locked (orange
-    /// row + caption).
+    /// Populates upcoming survey days so a reviewer sees every visual state
+    /// without creating data themselves — deliberately leaves the very first
+    /// day untouched (plain/unlocked-empty) before the colored ones, so a
+    /// first glance at the list doesn't look like "everything is colored":
+    /// day 0 empty, day 1 one signup (green), day 2 two signups (red "!" +
+    /// green row), day 3 one signup then locked (orange row + caption).
     private static func seedDemoSurveyDays(groupID: UUID, users: [User]) async {
         guard users.count >= 3 else { return }
         let surveyRepository = CloudKitSurveyRepository()
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: .now)
         guard let rangeEnd = calendar.date(byAdding: .day, value: 14, to: today) else { return }
-        guard let days = try? await surveyRepository.surveyDays(from: today, to: rangeEnd, groupID: groupID), days.count >= 3 else { return }
-
-        try? await surveyRepository.signIn(userID: users[0].id, dayID: days[0].id, bypassLock: false)
+        guard let days = try? await surveyRepository.surveyDays(from: today, to: rangeEnd, groupID: groupID), days.count >= 4 else { return }
 
         try? await surveyRepository.signIn(userID: users[0].id, dayID: days[1].id, bypassLock: false)
-        try? await surveyRepository.signIn(userID: users[1].id, dayID: days[1].id, bypassLock: false)
 
-        try? await surveyRepository.signIn(userID: users[2].id, dayID: days[2].id, bypassLock: false)
-        try? await surveyRepository.setLocked(true, reason: "Wird an diesem Tag nicht gefahren", dayID: days[2].id)
+        try? await surveyRepository.signIn(userID: users[0].id, dayID: days[2].id, bypassLock: false)
+        try? await surveyRepository.signIn(userID: users[1].id, dayID: days[2].id, bypassLock: false)
+
+        try? await surveyRepository.signIn(userID: users[2].id, dayID: days[3].id, bypassLock: false)
+        try? await surveyRepository.setLocked(true, reason: "Wird an diesem Tag nicht gefahren", dayID: days[3].id)
     }
 
     private static func seedDemoChatMessages(groupID: UUID, users: [User]) async {

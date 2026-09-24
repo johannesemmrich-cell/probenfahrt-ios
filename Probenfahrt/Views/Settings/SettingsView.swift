@@ -83,23 +83,27 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("Entwicklung") {
-                    if !isPharmacyAccount {
-                        Toggle("Als Admin anzeigen", isOn: Binding(
-                            get: { adminPreview.isEnabled },
-                            set: { adminPreview.isEnabled = $0 }
-                        ))
-                        Text("Zeigt Admin-Bereiche (vergangene Umfragen bearbeiten, Tag sperren, PDF-Export, Mitglieder verwalten) unabhängig von der echten Rolle — nur für diesen Prototyp. Echte Rechteprüfung folgt später (Backlog #2).")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                if devMode.isActive || session.isDemoSession {
+                    Section("Entwicklung") {
+                        if !isPharmacyAccount {
+                            Toggle("Als Admin anzeigen", isOn: Binding(
+                                get: { adminPreview.isEnabled },
+                                set: { adminPreview.isEnabled = $0 }
+                            ))
+                            Text("Zeigt Admin-Bereiche (vergangene Umfragen bearbeiten, Tag sperren, PDF-Export, Mitglieder verwalten) unabhängig von der echten Rolle — nur für diesen Prototyp. Echte Rechteprüfung folgt später (Backlog #2).")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
 
-                    if devMode.isActive {
-                        NavigationLink("Entwicklermodus") {
-                            DeveloperModeView()
+                        if devMode.isActive {
+                            NavigationLink("Entwicklermodus") {
+                                DeveloperModeView()
+                            }
                         }
                     }
+                }
 
+                Section {
                     versionFooter
                 }
 
