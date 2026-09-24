@@ -24,6 +24,12 @@ enum MockDataSeeder {
     /// shown to users, only used internally by `ensureDemoGroupExists()`.
     static let demoGroupJoinCode = "apple-review-demo"
 
+    /// Caches the demo group's CloudKit-assigned id locally so RootTabView
+    /// can self-heal `SessionStore.isDemoSession` for sessions created by an
+    /// older build (before that flag existed) without an extra CloudKit
+    /// round-trip on every launch.
+    static let demoGroupIDKey = "com.johannesemmrich.probenfahrt.demoGroupID"
+
     static func ensureCloudTestDataIfNeeded() async {
         let userRepository = CloudKitUserRepository()
         guard let group = try? await userRepository.ensureGroupExists(
@@ -79,6 +85,8 @@ enum MockDataSeeder {
             print("⚠️ MockDataSeeder: Demo-Gruppe konnte nicht angelegt/gefunden werden (CloudKit nicht erreichbar?).")
             return nil
         }
+
+        UserDefaults.standard.set(group.id.uuidString, forKey: demoGroupIDKey)
 
         guard let existingUsers = try? await userRepository.allUsers(inGroup: group.id), existingUsers.isEmpty else {
             return group

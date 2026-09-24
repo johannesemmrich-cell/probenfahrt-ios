@@ -649,8 +649,8 @@ async function handlePutProfile(request, env) {
 }
 
 /**
- * Pendant zu AdminCode.swift ("Admin", case-insensitive, kein Hash - siehe
- * dortiger Kommentar: bewusst einfach, kein echtes Sicherheitsmerkmal).
+ * Pendant zu AdminCode.swift ("IbdH-A26!", case-insensitive, kein Hash -
+ * siehe dortiger Kommentar: bewusst einfach, kein echtes Sicherheitsmerkmal).
  * Jedes Mitglied darf das versuchen, kein Admin-Gate auf diesem Endpunkt -
  * genau das ist der Zweck (Selbst-Freischaltung ohne bestehenden Admin).
  */
@@ -665,7 +665,7 @@ async function handlePostAdminCode(request, env) {
   } catch {
     return jsonResponse(400, { error: "Ungültige Anfrage" });
   }
-  if (!code || code.toLowerCase() !== "admin") {
+  if (!code || code.toLowerCase() !== "ibdh-a26!") {
     // 403, nicht 401 - 401 bedeutet in dieser App überall "Session ungültig",
     // ein falscher Code ist aber kein Auth-Problem, sonst würde das
     // Frontend fälschlich den Login-Screen zeigen statt eine Inline-Fehlermeldung.

@@ -90,6 +90,16 @@ struct RootTabView: View {
             return
         }
         currentUser = user
+        if !session.isDemoSession,
+           let groupID = user.groupID,
+           let cachedDemoGroupID = UserDefaults.standard.string(forKey: MockDataSeeder.demoGroupIDKey),
+           groupID.uuidString == cachedDemoGroupID {
+            // Self-heal: this device has a demo session created by a build
+            // from before isDemoSession existed (pre commit 1c58e64) — an
+            // in-place update would otherwise silently lose the "Als Admin
+            // anzeigen" toggle for it. Idempotent, re-checked every launch.
+            session.setCurrentUser(id: user.id, isDemo: true)
+        }
         if !featureOnboarding.hasSeenFeatureOnboarding {
             isShowingFeatureOnboarding = true
         }

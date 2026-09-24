@@ -28,6 +28,11 @@ struct LaunchGateView: View {
                     // join-code screen, which takes a few seconds of human
                     // typing anyway) needs to block on.
                     Task { await MockDataSeeder.ensureCloudTestDataIfNeeded() }
+                    // Also (re-)resolve the demo group on every launch, not
+                    // just when Demo-Modus is tapped — caches its id so
+                    // RootTabView can self-heal isDemoSession for sessions
+                    // from before that flag existed (see demoGroupIDKey).
+                    Task { _ = await MockDataSeeder.ensureDemoGroupExists() }
                 }
             }
         }

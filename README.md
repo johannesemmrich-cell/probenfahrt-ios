@@ -361,7 +361,7 @@ beide Umgebungen sind komplett getrennt, es gibt also keine Überschneidung.
   solange es die zwei Demo-Codes oben gibt.
 - **Haupt-Admin-Code:** Ganz unten in den Einstellungen (nur Laborteam-
   Accounts, die noch nicht Haupt-Admin sind) gibt es ein Code-Feld — Code
-  `Admin` eingeben schaltet den eigenen Account dauerhaft auf Haupt-Admin
+  `IbdH-A26!` eingeben schaltet den eigenen Account dauerhaft auf Haupt-Admin
   frei (echte, persistierte Rollenänderung, kein Preview-Toggle). Bewusst
   einfach/im Klartext für diesen Prototyp-Stand.
 - **Admin-Vorschau:** In den Einstellungen (nur Laborteam-Accounts) gibt es

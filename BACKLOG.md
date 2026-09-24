@@ -14,7 +14,7 @@ ergänzt.
 2. Echte Rollen-/Rechteprüfung (Haupt-Admin vs. Vice-Admin vs. normaler
    Nutzer, Apotheke vs. Laborteam) technisch durchsetzen (Auth statt
    Dev-Toggle "Als Admin anzeigen"/Dev-Mode-Admin-Vorschau bzw.
-   Dev-Mode-Bypass-Login und statt des Klartext-Admin-Codes "Admin" in den
+   Dev-Mode-Bypass-Login und statt des Klartext-Admin-Codes "IbdH-A26!" in den
    Einstellungen). Dazu gehört auch der Entwicklermodus-Bypass, der selbst
    den letzten Haupt-Admin aus der Gruppe entfernen, ihm den
    Haupt-Admin-Status entziehen (MemberDetailView/UserRepository

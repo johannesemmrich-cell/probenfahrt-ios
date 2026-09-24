@@ -64,6 +64,7 @@ struct DeveloperUnlockSheet: View {
 
 struct DeveloperModeView: View {
     @Environment(DevModeStore.self) private var devMode
+    @Environment(AdminPreviewStore.self) private var adminPreview
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \FeedbackEntry.timestamp, order: .reverse) private var feedbackEntries: [FeedbackEntry]
     @Query(sort: \DevTodoItem.createdAt, order: .forward) private var todoItems: [DevTodoItem]
@@ -277,7 +278,11 @@ struct DeveloperModeView: View {
             isPresented: $showExitConfirm,
             titleVisibility: .visible
         ) {
-            Button("Beenden", role: .destructive) { devMode.isActive = false }
+            Button("Beenden", role: .destructive) {
+                devMode.isActive = false
+                devMode.isAdminPreviewActive = false
+                adminPreview.isEnabled = false
+            }
             Button("Abbrechen", role: .cancel) {}
         } message: {
             Text("Alle Feedback-Einträge, To-Dos und Einstellungen bleiben erhalten.")
