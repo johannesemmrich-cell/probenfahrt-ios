@@ -9,6 +9,7 @@ struct RootTabView: View {
     @State private var currentUser: User?
     @State private var featureOnboarding = FeatureOnboardingStore()
     @State private var isShowingFeatureOnboarding = false
+    @State private var updateInfo: AppUpdateInfo?
 
     private var effectiveAccountKind: AccountKind {
         currentUser?.accountKind ?? .labTeam
@@ -33,10 +34,16 @@ struct RootTabView: View {
                 isShowingFeatureOnboarding = false
             }
         }
+        .overlay(alignment: .top) {
+            if let updateInfo {
+                UpdateAvailableBanner(info: updateInfo) { self.updateInfo = nil }
+            }
+        }
         .onChange(of: scenePhase) {
             guard scenePhase == .active, let currentUser else { return }
             Task { await unreadMessages.refresh(currentUser: currentUser) }
             Task { await surveyBadge.refresh(currentUser: currentUser) }
+            Task { updateInfo = await AppUpdateChecker.checkForUpdate() }
         }
     }
 
@@ -90,21 +97,28 @@ struct RootTabView: View {
             return
         }
         currentUser = user
-        if !session.isDemoSession,
-           let groupID = user.groupID,
-           let cachedDemoGroupID = UserDefaults.standard.string(forKey: MockDataSeeder.demoGroupIDKey),
-           groupID.uuidString == cachedDemoGroupID {
-            // Self-heal: this device has a demo session created by a build
-            // from before isDemoSession existed (pre commit 1c58e64) — an
-            // in-place update would otherwise silently lose the "Als Admin
-            // anzeigen" toggle for it. Idempotent, re-checked every launch.
-            session.setCurrentUser(id: user.id, isDemo: true)
+        if !session.isDemoSession, let groupID = user.groupID {
+            // Self-heal: a device could have a demo session created by a
+            // build from before isDemoSession existed (pre commit 1c58e64)
+            // — an in-place update would otherwise silently lose the "Als
+            // Admin anzeigen" toggle for it. The demo group id is normally
+            // cached by joinDemo() itself; resolve it once, lazily, only if
+            // still missing (e.g. this session predates that caching too),
+            // so this never costs a CloudKit round-trip on repeat launches.
+            if UserDefaults.standard.string(forKey: MockDataSeeder.demoGroupIDKey) == nil {
+                _ = await MockDataSeeder.ensureDemoGroupExists()
+            }
+            if let cachedDemoGroupID = UserDefaults.standard.string(forKey: MockDataSeeder.demoGroupIDKey),
+               groupID.uuidString == cachedDemoGroupID {
+                session.setCurrentUser(id: user.id, isDemo: true)
+            }
         }
         if !featureOnboarding.hasSeenFeatureOnboarding {
             isShowingFeatureOnboarding = true
         }
         await unreadMessages.refresh(currentUser: user)
         await surveyBadge.refresh(currentUser: user)
+        updateInfo = await AppUpdateChecker.checkForUpdate()
         if let groupID = user.groupID {
             // Fire-and-forget: (re-)registering push subscriptions is a
             // background convenience, not something the tab UI needs to
@@ -118,5 +132,51 @@ struct RootTabView: View {
                 Task { await SamplesPushSubscriptions.ensure(groupID: groupID, currentUserID: user.id) }
             }
         }
+    }
+}
+
+private struct UpdateAvailableBanner: View {
+    let info: AppUpdateInfo
+    let onDismiss: () -> Void
+
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "arrow.down.circle.fill")
+                .font(.title3)
+                .foregroundStyle(Color.accentColor)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Update verfügbar")
+                    .font(.subheadline.weight(.semibold))
+                Text("Version \(info.availableVersion) ist im App Store bereit.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Button("Aktualisieren") {
+                openURL(info.appStoreURL)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+
+            Button {
+                onDismiss()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(12)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+        .shadow(color: .black.opacity(0.1), radius: 8, y: 2)
+        .transition(.move(edge: .top).combined(with: .opacity))
+        .animation(.spring(duration: 0.3), value: info.availableVersion)
     }
 }
