@@ -30,8 +30,8 @@ struct SurveysView: View {
                                 replaceRow(updatedRow)
                             }
                             .listRowBackground(
-                                row.day.isLocked && !row.entries.isEmpty ? Color.orange.opacity(0.15)
-                                : !row.entries.isEmpty ? Color.green.opacity(0.15)
+                                row.highlight == .conflict ? Color.orange.opacity(0.15)
+                                : row.highlight == .confirmed ? Color.green.opacity(0.15)
                                 : nil
                             )
                         }
