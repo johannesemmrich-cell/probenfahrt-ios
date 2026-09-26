@@ -17,11 +17,11 @@ settings:
     SWIFT_VERSION: "6.0"
     IPHONEOS_DEPLOYMENT_TARGET: "26.0"
     TARGETED_DEVICE_FAMILY: "1"
-    # 1.0 ist bereits im App Store freigegeben/live (Stand 2026-09-24) -
+    # 1.0 und 1.1 sind bereits im App Store freigegeben/live (Stand 2026-09-26) -
     # Apple lässt keine weiteren Builds mehr unter einer bereits
     # freigegebenen Marketing-Version zu (Fehler 90186/90062 beim Upload-
-    # Versuch), deshalb hier vor dem nächsten Upload hochgezählt.
-    MARKETING_VERSION: "1.1"
+    # Versuch), deshalb hier vor jedem nächsten Upload wieder hochzählen.
+    MARKETING_VERSION: "1.2"
     CURRENT_PROJECT_VERSION: "2"
     CODE_SIGN_STYLE: Automatic
     # Fest eingetragen (HENEMM GmbH), statt es jedes Mal manuell in Xcode
