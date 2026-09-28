@@ -37,14 +37,16 @@ struct SurveyDayDetailView: View {
             .sorted()
     }
 
-    /// Includes previously removed members (see `users`) so admins can still
-    /// correct a past day's participants after someone has left the group —
-    /// sorted active-first so the day-to-day roster stays on top.
-    private var sortedUsers: [User] {
-        users.sorted { lhs, rhs in
-            if lhs.isRemoved != rhs.isRemoved { return !lhs.isRemoved }
-            return lhs.name.localizedCompare(rhs.name) == .orderedAscending
-        }
+    private var activeUsers: [User] {
+        users.filter { !$0.isRemoved }.sorted { $0.name.localizedCompare($1.name) == .orderedAscending }
+    }
+
+    /// Previously removed members, collapsed into their own DisclosureGroup
+    /// (see body) so admins can still correct a past day's participants
+    /// after someone has left the group, without cluttering the day-to-day
+    /// roster.
+    private var removedUsers: [User] {
+        users.filter(\.isRemoved).sorted { $0.name.localizedCompare($1.name) == .orderedAscending }
     }
 
     private var currentMonthInterval: DateInterval {
@@ -55,33 +57,44 @@ struct SurveyDayDetailView: View {
         MemberStatsCalculator.tripCount(for: user.id, entries: monthEntries, in: currentMonthInterval, asOf: .now)
     }
 
+    @ViewBuilder
+    private func memberRow(for user: User) -> some View {
+        Button {
+            Task { await toggleEntry(for: user) }
+        } label: {
+            HStack {
+                Text(user.name).foregroundStyle(user.isRemoved ? .secondary : .primary)
+                Spacer()
+                Image(systemName: signedInUserIDs.contains(user.id) ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(signedInUserIDs.contains(user.id) ? .green : .secondary)
+            }
+        }
+        .contextMenu {
+            Button(signedInUserIDs.contains(user.id) ? "Austragen" : "Eintragen") {
+                Task { await toggleEntry(for: user) }
+            }
+        } preview: {
+            MemberMonthlyTripsPreview(userName: user.name, tripCount: hasLoadedMonthEntries ? tripCountThisMonth(for: user) : nil)
+        }
+    }
+
     var body: some View {
         List {
             if isAdmin {
                 // TODO(Backlog #2): admin-only action, not technically enforced yet —
                 // reachable by anyone via the "Als Admin anzeigen" dev toggle.
                 Section {
-                    if sortedUsers.isEmpty {
+                    if activeUsers.isEmpty && removedUsers.isEmpty {
                         Text("Keine Mitglieder in der Gruppe").foregroundStyle(.secondary)
                     } else {
-                        ForEach(sortedUsers) { user in
-                            Button {
-                                Task { await toggleEntry(for: user) }
-                            } label: {
-                                HStack {
-                                    Text(user.isRemoved ? "\(user.name) (entfernt)" : user.name)
-                                        .foregroundStyle(user.isRemoved ? .secondary : .primary)
-                                    Spacer()
-                                    Image(systemName: signedInUserIDs.contains(user.id) ? "checkmark.circle.fill" : "circle")
-                                        .foregroundStyle(signedInUserIDs.contains(user.id) ? .green : .secondary)
+                        ForEach(activeUsers) { user in
+                            memberRow(for: user)
+                        }
+                        if !removedUsers.isEmpty {
+                            DisclosureGroup("Entfernte Mitglieder (\(removedUsers.count))") {
+                                ForEach(removedUsers) { user in
+                                    memberRow(for: user)
                                 }
-                            }
-                            .contextMenu {
-                                Button(signedInUserIDs.contains(user.id) ? "Austragen" : "Eintragen") {
-                                    Task { await toggleEntry(for: user) }
-                                }
-                            } preview: {
-                                MemberMonthlyTripsPreview(userName: user.name, tripCount: hasLoadedMonthEntries ? tripCountThisMonth(for: user) : nil)
                             }
                         }
                     }
