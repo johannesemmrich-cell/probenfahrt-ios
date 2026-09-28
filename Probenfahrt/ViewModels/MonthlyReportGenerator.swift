@@ -9,11 +9,17 @@ enum MonthlyReportGenerator {
     }
 
     /// Aggregates trip counts per user for the admin monthly PDF export,
-    /// e.g. "Johannes: 7 Fahrten". Sorted by trip count descending, then by name.
-    static func generate(entries: [SurveyEntryWithDate], users: [User]) -> [ReportLine] {
+    /// e.g. "Johannes: 7 Fahrten". Sorted by trip count descending, then by
+    /// name. Only counts days that are already over (see
+    /// MemberStatsCalculator) — a sign-up for a day later this month isn't a
+    /// completed Fahrt yet. `users` should include removed members (see
+    /// `UserRepository.allUsersIncludingRemoved`) so a since-removed
+    /// member's past Fahrten still resolve a name instead of being dropped.
+    static func generate(entries: [SurveyEntryWithDate], users: [User], asOf: Date, calendar: Calendar = .current) -> [ReportLine] {
+        let cutoff = calendar.startOfDay(for: asOf)
         let userByID = Dictionary(uniqueKeysWithValues: users.map { ($0.id, $0) })
         var counts: [UUID: Int] = [:]
-        for entryWithDate in entries {
+        for entryWithDate in entries where entryWithDate.date < cutoff {
             guard let userID = entryWithDate.entry.userID else { continue }
             counts[userID, default: 0] += 1
         }

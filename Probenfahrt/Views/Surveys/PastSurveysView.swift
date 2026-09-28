@@ -54,7 +54,10 @@ struct PastSurveysView: View {
     private func load() async {
         guard let groupID = currentUser.groupID else { return }
         do {
-            let newUsers = try await userRepository.allUsers(inGroup: groupID)
+            // Includes removed members - a past Fahrt from someone who has
+            // since left the group must still show a name instead of
+            // vanishing from the history.
+            let newUsers = try await userRepository.allUsersIncludingRemoved(inGroup: groupID)
             let newBlocks = SurveyWeekWindow.pastWeekBlocks(from: .now)
             guard let start = newBlocks.last?.weekStart, let end = newBlocks.first?.weekEnd else { return }
             let days = try await surveyRepository.existingSurveyDays(from: start, to: end, groupID: groupID)

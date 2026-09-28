@@ -46,7 +46,7 @@ struct MemberDetailView: View {
 
     private var periodTripCount: Int {
         guard let periodInterval else { return 0 }
-        return MemberStatsCalculator.tripCount(for: user.id, entries: allEntries, in: periodInterval)
+        return MemberStatsCalculator.tripCount(for: user.id, entries: allEntries, in: periodInterval, asOf: .now)
     }
 
     private var periodLabel: String {
@@ -103,7 +103,7 @@ struct MemberDetailView: View {
             }
 
             Section("Fahrten") {
-                LabeledContent("Insgesamt", value: "\(MemberStatsCalculator.totalTrips(for: user.id, entries: allEntries))")
+                LabeledContent("Insgesamt", value: "\(MemberStatsCalculator.totalTrips(for: user.id, entries: allEntries, asOf: .now))")
 
                 Picker("Zeitraum", selection: $period) {
                     ForEach(StatPeriod.allCases, id: \.self) { Text($0.rawValue).tag($0) }

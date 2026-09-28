@@ -72,9 +72,9 @@ struct AdminReportView: View {
         let month = calendar.component(.month, from: referenceMonth)
         let year = calendar.component(.year, from: referenceMonth)
         do {
-            let users = try await userRepository.allUsers(inGroup: groupID)
+            let users = try await userRepository.allUsersIncludingRemoved(inGroup: groupID)
             let entries = try await surveyRepository.entriesWithDates(inMonth: month, year: year, groupID: groupID)
-            let newLines = MonthlyReportGenerator.generate(entries: entries, users: users)
+            let newLines = MonthlyReportGenerator.generate(entries: entries, users: users, asOf: .now)
             let data = PDFReportRenderer.renderMonthlyReport(title: "Fahrten-Auswertung \(monthTitle)", lines: newLines)
             lines = newLines
             pdfURL = writeTempPDF(data: data)

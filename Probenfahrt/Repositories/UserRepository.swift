@@ -19,7 +19,14 @@ func canRemoveUser(_ user: User, adminCountInGroup: Int) -> Bool {
 
 @MainActor
 protocol UserRepository {
+    /// Active members only (excludes soft-deleted/`isRemoved` users) — the
+    /// roster for onboarding, admin counts, Kürzel-Eindeutigkeit and every
+    /// "current members" list.
     func allUsers(inGroup groupID: UUID) async throws -> [User]
+    /// Active members plus previously removed ones — needed wherever a past
+    /// `SurveyEntry` must still resolve a name/abbreviation (day detail,
+    /// "Vergangene Umfragen", PDF Monatsauswertung).
+    func allUsersIncludingRemoved(inGroup groupID: UUID) async throws -> [User]
     func user(id: UUID) async throws -> User?
     func isAbbreviationTaken(_ abbreviation: String, inGroup groupID: UUID) async throws -> Bool
     /// Resolves either a group's regular join code or its pharmacy join code,
@@ -37,6 +44,12 @@ protocol UserRepository {
     /// only the DevMode/Admin-Vorschau escape hatch in MemberDetailView ever
     /// passes.
     func setRole(id: UUID, role: UserRole, bypassLastAdminGuard: Bool) async throws
+    /// Soft delete: marks the user `isRemoved` and clears their web password
+    /// (so they can no longer log into app.mediproben.com) instead of
+    /// deleting the CloudKit record outright. Past `SurveyEntry` rows keep
+    /// referencing this `id`, so they stay attributable in historical views;
+    /// `allUsers` excludes the user from every active roster and
+    /// Kürzel-Eindeutigkeit check, freeing their name/Kürzel for reuse.
     func deleteUser(id: UUID, bypassLastAdminGuard: Bool) async throws
     /// Admin-assigned password for the web check-in login (mediproben.com,
     /// see MemberDetailView) - pass nil/empty to clear it.

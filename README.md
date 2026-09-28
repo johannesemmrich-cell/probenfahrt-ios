@@ -117,6 +117,10 @@ für dich erledigen, dafür gibt es keine API:
    einen neuen Record-*Typ* an!) → bei "Record Fields" das "+" → Name
    `webPasswordEncrypted`, Typ String → Save Changes. Erst danach wie oben
    unter Indexes als Queryable markierbar.
+   **Gleicher Schritt nötig für `isRemoved`** (Typ Int64, Stand 2026-09-28,
+   Soft-Delete beim Entfernen aus der Gruppe) — ohne dieses Feld schlägt
+   `deleteUser` fehl. Muss **nicht** Queryable sein, da nach dem Laden
+   client-seitig in Swift gefiltert wird, nicht per CloudKit-Query.
    **Zusätzlich für die Web-App (`web/worker-app/`):** `SurveyDay.date`
    muss zusätzlich als **Sortable** markiert sein — die Kalender-Ansicht
    filtert per Zeitraum (`GREATER_THAN_OR_EQUALS`/`LESS_THAN_OR_EQUALS`),

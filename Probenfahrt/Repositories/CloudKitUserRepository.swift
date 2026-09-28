@@ -40,6 +40,7 @@ final class CloudKitUserRepository: UserRepository {
         static let groupID = "groupID"
         static let createdAt = "createdAt"
         static let webPasswordEncrypted = "webPasswordEncrypted"
+        static let isRemoved = "isRemoved"
     }
 
     // MARK: - Group seeding (not part of UserRepository — only MockDataSeeder
@@ -81,6 +82,10 @@ final class CloudKitUserRepository: UserRepository {
     // MARK: - UserRepository
 
     func allUsers(inGroup groupID: UUID) async throws -> [User] {
+        try await allUsersIncludingRemoved(inGroup: groupID).filter { !$0.isRemoved }
+    }
+
+    func allUsersIncludingRemoved(inGroup groupID: UUID) async throws -> [User] {
         let predicate = NSPredicate(format: "%K == %@", UserField.groupID, groupID.uuidString)
         let query = CKQuery(recordType: RecordType.user, predicate: predicate)
         return try await allRecords(matching: query)
@@ -181,7 +186,14 @@ final class CloudKitUserRepository: UserRepository {
                 throw UserRepositoryError.cannotRemoveLastAdmin
             }
         }
-        try await database.deleteRecord(withID: Self.userRecordID(id: id))
+        guard let record = try? await database.record(for: Self.userRecordID(id: id)) else { return }
+        record[UserField.isRemoved] = 1 as CKRecordValue
+        // Revokes web-app access immediately - a removed member must not be
+        // able to keep logging into app.mediproben.com with their old
+        // password just because the record itself is now soft-deleted
+        // rather than gone.
+        record[UserField.webPasswordEncrypted] = nil
+        _ = try await database.save(record)
     }
 
     // MARK: - Helpers
@@ -237,6 +249,7 @@ final class CloudKitUserRepository: UserRepository {
         record[UserField.groupID] = user.groupID?.uuidString as CKRecordValue?
         record[UserField.createdAt] = user.createdAt as CKRecordValue
         record[UserField.webPasswordEncrypted] = user.webPasswordEncrypted as CKRecordValue?
+        record[UserField.isRemoved] = (user.isRemoved ? 1 : 0) as CKRecordValue
     }
 
     private static func user(from record: CKRecord) -> User {
@@ -252,7 +265,8 @@ final class CloudKitUserRepository: UserRepository {
             accountKind: accountKind,
             groupID: groupID,
             createdAt: (record[UserField.createdAt] as? Date) ?? .now,
-            webPasswordEncrypted: record[UserField.webPasswordEncrypted] as? String
+            webPasswordEncrypted: record[UserField.webPasswordEncrypted] as? String,
+            isRemoved: ((record[UserField.isRemoved] as? Int64) ?? 0) != 0
         )
     }
 }

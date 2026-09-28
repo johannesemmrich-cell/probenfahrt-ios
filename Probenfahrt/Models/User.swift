@@ -15,6 +15,15 @@ final class User {
     /// without an Apple device. Reversible (not a one-way hash) so an admin
     /// can view it again in MemberDetailView.
     var webPasswordEncrypted: String?
+    /// Set by `deleteUser` (soft delete) when an admin removes this member
+    /// from the group. The record itself is kept so past `SurveyEntry`
+    /// rows can still resolve a name/abbreviation instead of silently
+    /// disappearing from day details, "Vergangene Umfragen" and the PDF
+    /// Monatsauswertung. `allUsers` filters these out everywhere an active
+    /// roster is needed (onboarding, admin counts, Kürzel-Eindeutigkeit),
+    /// so the name/Kürzel become free for reuse; `allUsersIncludingRemoved`
+    /// is the escape hatch for historical name resolution.
+    var isRemoved: Bool = false
 
     var role: UserRole {
         get { UserRole(rawValue: roleRawValue) ?? .member }
@@ -34,7 +43,8 @@ final class User {
         accountKind: AccountKind = .labTeam,
         groupID: UUID? = nil,
         createdAt: Date = .now,
-        webPasswordEncrypted: String? = nil
+        webPasswordEncrypted: String? = nil,
+        isRemoved: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -44,5 +54,6 @@ final class User {
         self.groupID = groupID
         self.createdAt = createdAt
         self.webPasswordEncrypted = webPasswordEncrypted
+        self.isRemoved = isRemoved
     }
 }

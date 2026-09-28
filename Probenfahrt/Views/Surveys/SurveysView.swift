@@ -63,7 +63,10 @@ struct SurveysView: View {
     private func load() async {
         guard let groupID = currentUser.groupID else { return }
         do {
-            let newUsers = try await userRepository.allUsers(inGroup: groupID)
+            // Includes removed members so a day they already signed up for
+            // before being removed still shows their name/initials instead
+            // of silently dropping them.
+            let newUsers = try await userRepository.allUsersIncludingRemoved(inGroup: groupID)
             let newBlocks = SurveyWeekWindow.currentWeekBlocks(from: .now)
             guard let start = newBlocks.first?.weekStart, let end = newBlocks.last?.weekEnd else { return }
             let days = try await surveyRepository.surveyDays(from: start, to: end, groupID: groupID)

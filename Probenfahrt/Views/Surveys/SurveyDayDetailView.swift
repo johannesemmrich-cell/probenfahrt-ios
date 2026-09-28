@@ -37,8 +37,14 @@ struct SurveyDayDetailView: View {
             .sorted()
     }
 
+    /// Includes previously removed members (see `users`) so admins can still
+    /// correct a past day's participants after someone has left the group —
+    /// sorted active-first so the day-to-day roster stays on top.
     private var sortedUsers: [User] {
-        users.sorted { $0.name.localizedCompare($1.name) == .orderedAscending }
+        users.sorted { lhs, rhs in
+            if lhs.isRemoved != rhs.isRemoved { return !lhs.isRemoved }
+            return lhs.name.localizedCompare(rhs.name) == .orderedAscending
+        }
     }
 
     private var currentMonthInterval: DateInterval {
@@ -46,7 +52,7 @@ struct SurveyDayDetailView: View {
     }
 
     private func tripCountThisMonth(for user: User) -> Int {
-        MemberStatsCalculator.tripCount(for: user.id, entries: monthEntries, in: currentMonthInterval)
+        MemberStatsCalculator.tripCount(for: user.id, entries: monthEntries, in: currentMonthInterval, asOf: .now)
     }
 
     var body: some View {
@@ -63,7 +69,8 @@ struct SurveyDayDetailView: View {
                                 Task { await toggleEntry(for: user) }
                             } label: {
                                 HStack {
-                                    Text(user.name).foregroundStyle(.primary)
+                                    Text(user.isRemoved ? "\(user.name) (entfernt)" : user.name)
+                                        .foregroundStyle(user.isRemoved ? .secondary : .primary)
                                     Spacer()
                                     Image(systemName: signedInUserIDs.contains(user.id) ? "checkmark.circle.fill" : "circle")
                                         .foregroundStyle(signedInUserIDs.contains(user.id) ? .green : .secondary)

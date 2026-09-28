@@ -261,9 +261,10 @@ struct SettingsView: View {
 
     /// Mirrors the existing admin "Aus Gruppe entfernen" path
     /// (MemberDetailView.remove → deleteUser) instead of just signing out
-    /// locally — otherwise the CloudKit User record lingers forever and
-    /// permanently blocks this name/Kürzel from being reused on rejoin
-    /// (isAbbreviationTaken checks every record ever created, active or not).
+    /// locally — deleteUser soft-deletes (isRemoved), so past Fahrten stay
+    /// attributed to this account in historical views, while `allUsers`
+    /// (used by isAbbreviationTaken and onboarding) excludes it, freeing
+    /// this name/Kürzel for reuse on rejoin.
     private func leaveGroup() async {
         leaveErrorMessage = nil
         do {
