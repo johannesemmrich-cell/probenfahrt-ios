@@ -40,6 +40,7 @@ final class CloudKitUserRepository: UserRepository {
         static let groupID = "groupID"
         static let createdAt = "createdAt"
         static let webPasswordEncrypted = "webPasswordEncrypted"
+        static let reconnectCode = "reconnectCode"
         static let isRemoved = "isRemoved"
     }
 
@@ -94,14 +95,62 @@ final class CloudKitUserRepository: UserRepository {
     }
 
     func user(id: UUID) async throws -> User? {
-        guard let record = try? await database.record(for: Self.userRecordID(id: id)) else { return nil }
-        return Self.user(from: record)
+        // Nur "Record existiert nicht" wird zu nil — alle anderen Fehler
+        // (kein Netz, iCloud nicht erreichbar) werden geworfen. Das frühere
+        // try? hat beides zu nil verschmolzen, worauf RootTabView die
+        // Session beendet hat: der Hauptgrund, warum Mitglieder scheinbar
+        // grundlos "aus der App geflogen" sind.
+        do {
+            let record = try await database.record(for: Self.userRecordID(id: id))
+            return Self.user(from: record)
+        } catch let error as CKError where error.code == .unknownItem {
+            return nil
+        }
     }
 
     func isAbbreviationTaken(_ abbreviation: String, inGroup groupID: UUID) async throws -> Bool {
         let normalized = abbreviation.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let users = try await allUsers(inGroup: groupID)
         return users.contains { $0.abbreviation.lowercased() == normalized }
+    }
+
+    func userByReconnectCode(_ code: String, inGroup groupID: UUID) async throws -> User? {
+        guard let normalized = ReconnectCode.normalize(code) else { return nil }
+        // In-memory statt per CloudKit-Query auf reconnectCode (wie
+        // isAbbreviationTaken) — spart den Queryable-Index im Schema.
+        let users = try await allUsersIncludingRemoved(inGroup: groupID)
+        return users.first { $0.reconnectCode == normalized }
+    }
+
+    func isReconnectCodeTaken(_ code: String, inGroup groupID: UUID, excluding userID: UUID?) async throws -> Bool {
+        guard let normalized = ReconnectCode.normalize(code) else { return false }
+        let users = try await allUsersIncludingRemoved(inGroup: groupID)
+        return users.contains { $0.reconnectCode == normalized && $0.id != userID }
+    }
+
+    func updateProfile(id: UUID, name: String, abbreviation: String, reconnectCode: String?) async throws {
+        let record = try await database.record(for: Self.userRecordID(id: id))
+        record[UserField.name] = name as CKRecordValue
+        record[UserField.abbreviation] = abbreviation as CKRecordValue
+        record[UserField.reconnectCode] = reconnectCode.flatMap(ReconnectCode.normalize) as CKRecordValue?
+        // savePolicy .changedKeys statt database.save(_:): Der Default
+        // (.ifServerRecordUnchanged) vergleicht den Änderungsstand des
+        // GESAMTEN Records und warf beim Profil-Speichern reproduzierbar
+        // "client oplock error", obwohl der Record frisch gefetcht war.
+        // .changedKeys überschreibt nur die drei hier gesetzten Felder
+        // ohne diesen Vergleich — für "Nutzer ändert seine eigenen
+        // Profilfelder" ist Feld-weises Last-Writer-Wins die richtige
+        // Semantik.
+        let results = try await database.modifyRecords(saving: [record], deleting: [], savePolicy: .changedKeys)
+        for result in results.saveResults.values {
+            _ = try result.get()
+        }
+    }
+
+    func reactivateUser(id: UUID) async throws {
+        let record = try await database.record(for: Self.userRecordID(id: id))
+        record[UserField.isRemoved] = 0 as CKRecordValue
+        _ = try await database.save(record)
     }
 
     func resolveJoinCode(_ code: String) async throws -> GroupJoinResult? {
@@ -178,7 +227,7 @@ final class CloudKitUserRepository: UserRepository {
         }
     }
 
-    func deleteUser(id: UUID, bypassLastAdminGuard: Bool = false) async throws {
+    func deleteUser(id: UUID, bypassLastAdminGuard: Bool = false, revokeReconnectCode: Bool) async throws {
         guard let user = try await user(id: id) else { return }
         if !bypassLastAdminGuard, let groupID = user.groupID {
             let adminCount = try await allUsers(inGroup: groupID).filter { $0.role == .admin }.count
@@ -193,6 +242,12 @@ final class CloudKitUserRepository: UserRepository {
         // password just because the record itself is now soft-deleted
         // rather than gone.
         record[UserField.webPasswordEncrypted] = nil
+        if revokeReconnectCode {
+            // Admin-Entfernung: auch der Wiedereinstiegs-Code verfällt,
+            // sonst könnte sich das entfernte Mitglied selbst wieder
+            // hereinlassen. Selbst-Verlassen (SettingsView) behält ihn.
+            record[UserField.reconnectCode] = nil
+        }
         _ = try await database.save(record)
     }
 
@@ -249,6 +304,7 @@ final class CloudKitUserRepository: UserRepository {
         record[UserField.groupID] = user.groupID?.uuidString as CKRecordValue?
         record[UserField.createdAt] = user.createdAt as CKRecordValue
         record[UserField.webPasswordEncrypted] = user.webPasswordEncrypted as CKRecordValue?
+        record[UserField.reconnectCode] = user.reconnectCode as CKRecordValue?
         record[UserField.isRemoved] = (user.isRemoved ? 1 : 0) as CKRecordValue
     }
 
@@ -266,6 +322,7 @@ final class CloudKitUserRepository: UserRepository {
             groupID: groupID,
             createdAt: (record[UserField.createdAt] as? Date) ?? .now,
             webPasswordEncrypted: record[UserField.webPasswordEncrypted] as? String,
+            reconnectCode: record[UserField.reconnectCode] as? String,
             isRemoved: ((record[UserField.isRemoved] as? Int64) ?? 0) != 0
         )
     }

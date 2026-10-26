@@ -15,6 +15,11 @@ final class User {
     /// without an Apple device. Reversible (not a one-way hash) so an admin
     /// can view it again in MemberDetailView.
     var webPasswordEncrypted: String?
+    /// Selbst gewählter 3-Zeichen-Wiedereinstiegs-Code (lowercased, pro
+    /// Gruppe eindeutig, siehe `ReconnectCode`). Erlaubt Wieder-Anmeldung
+    /// mit derselben UUID via "GruppenCode-Code" im Onboarding. Nil = nie
+    /// gesetzt oder vom Admin beim Entfernen widerrufen.
+    var reconnectCode: String?
     /// Set by `deleteUser` (soft delete) when an admin removes this member
     /// from the group. The record itself is kept so past `SurveyEntry`
     /// rows can still resolve a name/abbreviation instead of silently
@@ -44,6 +49,7 @@ final class User {
         groupID: UUID? = nil,
         createdAt: Date = .now,
         webPasswordEncrypted: String? = nil,
+        reconnectCode: String? = nil,
         isRemoved: Bool = false
     ) {
         self.id = id
@@ -54,6 +60,7 @@ final class User {
         self.groupID = groupID
         self.createdAt = createdAt
         self.webPasswordEncrypted = webPasswordEncrypted
+        self.reconnectCode = reconnectCode
         self.isRemoved = isRemoved
     }
 }

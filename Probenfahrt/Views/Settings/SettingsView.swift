@@ -10,6 +10,7 @@ struct SettingsView: View {
 
     @State private var name: String
     @State private var abbreviation: String
+    @State private var reconnectCode: String
     @State private var errorMessage: String?
     @State private var isShowingLeaveConfirmation = false
     @State private var leaveErrorMessage: String?
@@ -37,6 +38,7 @@ struct SettingsView: View {
         self.onCurrentUserUpdated = onCurrentUserUpdated
         _name = State(initialValue: currentUser.name)
         _abbreviation = State(initialValue: currentUser.abbreviation)
+        _reconnectCode = State(initialValue: currentUser.reconnectCode?.uppercased() ?? "")
     }
 
     var body: some View {
@@ -144,6 +146,10 @@ struct SettingsView: View {
             ) {
                 Button("Verlassen", role: .destructive) { Task { await leaveGroup() } }
                 Button("Abbrechen", role: .cancel) {}
+            } message: {
+                Text(currentUser.reconnectCode != nil
+                     ? "Dein Konto bleibt erhalten. Mit \"GruppenCode-DeinWiedereinstiegsCode\" kommst du jederzeit zurück."
+                     : "Dein Konto bleibt erhalten. Tipp: Hinterlege vorher im Profil einen Wiedereinstiegs-Code, dann kommst du ohne Admin-Hilfe zurück.")
             }
             .sheet(isPresented: $showDeveloperUnlock) {
                 DeveloperUnlockSheet(isPresented: $showDeveloperUnlock)
@@ -173,6 +179,12 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                TextField("Wiedereinstiegs-Code (3 Zeichen)", text: $reconnectCode)
+                    .textInputAutocapitalization(.characters)
+                    .autocorrectionDisabled()
+                Text("Optional: 3 Buchstaben/Ziffern, einmalig pro Gruppe. Solltest du die Gruppe verlassen oder abgemeldet werden, kommst du mit \"GruppenCode-DeinCode\" direkt zurück in dein Konto — mit allen Fahrten und Eintragungen.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 if let errorMessage {
                     Text(errorMessage).font(.footnote).foregroundStyle(.red)
                 }
@@ -227,6 +239,17 @@ struct SettingsView: View {
         }
         guard let groupID = currentUser.groupID else { return }
 
+        let trimmedReconnect = reconnectCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedReconnect: String?
+        if trimmedReconnect.isEmpty {
+            normalizedReconnect = nil
+        } else if let normalized = ReconnectCode.normalize(trimmedReconnect) {
+            normalizedReconnect = normalized
+        } else {
+            errorMessage = "Der Wiedereinstiegs-Code muss aus genau 3 Buchstaben oder Ziffern bestehen."
+            return
+        }
+
         if isFullAdmin, trimmedAbbreviation.lowercased() != currentUser.abbreviation.lowercased() {
             if let taken = try? await userRepository.isAbbreviationTaken(trimmedAbbreviation, inGroup: groupID), taken {
                 errorMessage = "Dieses Kürzel ist schon vergeben."
@@ -234,8 +257,16 @@ struct SettingsView: View {
             }
         }
 
+        if let normalizedReconnect, normalizedReconnect != currentUser.reconnectCode {
+            if let taken = try? await userRepository.isReconnectCodeTaken(normalizedReconnect, inGroup: groupID, excluding: currentUser.id), taken {
+                errorMessage = "Dieser Wiedereinstiegs-Code ist in dieser Gruppe schon vergeben."
+                return
+            }
+        }
+
         do {
-            try await userRepository.updateUser(id: currentUser.id, name: trimmedName, abbreviation: trimmedAbbreviation)
+            try await userRepository.updateProfile(id: currentUser.id, name: trimmedName, abbreviation: trimmedAbbreviation, reconnectCode: normalizedReconnect)
+            currentUser.reconnectCode = normalizedReconnect
             successPulse += 1
             onCurrentUserUpdated(currentUser)
         } catch {
@@ -264,11 +295,13 @@ struct SettingsView: View {
     /// locally — deleteUser soft-deletes (isRemoved), so past Fahrten stay
     /// attributed to this account in historical views, while `allUsers`
     /// (used by isAbbreviationTaken and onboarding) excludes it, freeing
-    /// this name/Kürzel for reuse on rejoin.
+    /// this name/Kürzel for reuse on rejoin. Unlike admin removal the
+    /// Wiedereinstiegs-Code is kept (revokeReconnectCode: false): who leaves
+    /// voluntarily may return anytime via "GruppenCode-Code".
     private func leaveGroup() async {
         leaveErrorMessage = nil
         do {
-            try await userRepository.deleteUser(id: currentUser.id, bypassLastAdminGuard: false)
+            try await userRepository.deleteUser(id: currentUser.id, bypassLastAdminGuard: false, revokeReconnectCode: false)
             session.signOut()
         } catch UserRepositoryError.cannotRemoveLastAdmin {
             leaveErrorMessage = "Du bist der letzte Admin der Gruppe. Ernenne zuerst jemand anderen zum Admin, bevor du die Gruppe verlässt."

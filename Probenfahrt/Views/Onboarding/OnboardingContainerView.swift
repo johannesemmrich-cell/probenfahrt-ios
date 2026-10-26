@@ -61,6 +61,10 @@ struct OnboardingContainerView: View {
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
 
+            Text("Schon mal dabei gewesen? Mit \"GruppenCode-DeinWiedereinstiegsCode\" meldest du dich direkt wieder mit deinem bestehenden Konto an.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
             errorText
 
             Spacer()
@@ -209,12 +213,28 @@ struct OnboardingContainerView: View {
         isSubmitting = true
         defer { isSubmitting = false }
         do {
-            guard let result = try await userRepository.resolveJoinCode(trimmedCode) else {
-                errorMessage = "Unbekannter Code. Bitte beim Team nachfragen."
+            if let result = try await userRepository.resolveJoinCode(trimmedCode) {
+                pendingGroupID = result.group.id
+                step = result.accountKind == .pharmacy ? .pharmacyIdentity : .labIdentity
                 return
             }
-            pendingGroupID = result.group.id
-            step = result.accountKind == .pharmacy ? .pharmacyIdentity : .labIdentity
+            // Wiedereinstieg "GruppenCode-XYZ": meldet ein bestehendes Konto
+            // direkt wieder an (gleiche UUID — Fahrten/Umfragen/Kalender
+            // bleiben dran), statt über den Identitäts-Schritt ein Duplikat
+            // anzulegen. Siehe ReconnectCode.
+            if let parts = ReconnectCode.splitLoginInput(trimmedCode),
+               let groupResult = try await userRepository.resolveJoinCode(parts.joinCode) {
+                guard let user = try await userRepository.userByReconnectCode(parts.code, inGroup: groupResult.group.id) else {
+                    errorMessage = "Kein Konto mit diesem Wiedereinstiegs-Code gefunden. Bitte beim Team nachfragen."
+                    return
+                }
+                if user.isRemoved {
+                    try await userRepository.reactivateUser(id: user.id)
+                }
+                session.setCurrentUser(id: user.id)
+                return
+            }
+            errorMessage = "Unbekannter Code. Bitte beim Team nachfragen."
         } catch {
             errorMessage = "Etwas ist schiefgelaufen: \(error.localizedDescription)"
         }

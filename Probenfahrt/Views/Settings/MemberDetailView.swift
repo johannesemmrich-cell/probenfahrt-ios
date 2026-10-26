@@ -280,7 +280,10 @@ struct MemberDetailView: View {
 
     private func remove() async {
         do {
-            try await userRepository.deleteUser(id: user.id, bypassLastAdminGuard: isDeveloperOverride)
+            // revokeReconnectCode: Admin-Entfernung widerruft den
+            // Wiedereinstiegs-Code — anders als freiwilliges Verlassen
+            // (SettingsView.leaveGroup), nach dem er gültig bleibt.
+            try await userRepository.deleteUser(id: user.id, bypassLastAdminGuard: isDeveloperOverride, revokeReconnectCode: true)
             successPulse += 1
             onRemoved()
             dismiss()

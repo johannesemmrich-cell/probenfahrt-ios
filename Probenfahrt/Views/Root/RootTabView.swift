@@ -7,6 +7,7 @@ struct RootTabView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var currentUser: User?
+    @State private var loadFailed = false
     @State private var featureOnboarding = FeatureOnboardingStore()
     @State private var isShowingFeatureOnboarding = false
     @State private var updateInfo: AppUpdateInfo?
@@ -23,6 +24,8 @@ struct RootTabView: View {
                 } else {
                     labTeamTabs(for: currentUser)
                 }
+            } else if loadFailed {
+                loadFailedView
             } else {
                 ProgressView()
                     .task { await loadCurrentUser() }
@@ -82,17 +85,55 @@ struct RootTabView: View {
         }
     }
 
+    private var loadFailedView: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "icloud.slash")
+                .font(.largeTitle)
+                .foregroundStyle(.secondary)
+            Text("Daten konnten nicht geladen werden")
+                .font(.headline)
+            Text("Bitte prüfe deine Internetverbindung und ob du in iCloud angemeldet bist.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button("Erneut versuchen") {
+                Task { await loadCurrentUser() }
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .padding(24)
+    }
+
     private func loadCurrentUser() async {
         guard let id = session.currentUserID else { return }
+        loadFailed = false
         let repository = CloudKitUserRepository()
-        let user = try? await repository.user(id: id)
+        let user: User?
+        do {
+            user = try await repository.user(id: id)
+        } catch {
+            // Netzwerk-/iCloud-Fehler: Session BEHALTEN und Retry anbieten.
+            // Früher wurde hier ausgeloggt und das Mitglied musste neu
+            // beitreten (= Duplikat-Konto) — "Mitglieder fliegen aus der
+            // App". user(id:) liefert nil nur noch, wenn der Datensatz
+            // nachweislich nicht existiert.
+            loadFailed = true
+            return
+        }
         guard let user else {
             // The stored session points to a user CloudKit doesn't know
             // about — e.g. a leftover local session from before the
-            // User/TeamGroup migration to CloudKit, or an account removed
-            // from the group by an admin on another device. Sign out so
-            // RootGateView falls back to onboarding instead of leaving this
-            // screen stuck on its loading spinner forever.
+            // User/TeamGroup migration to CloudKit. Sign out so RootGateView
+            // falls back to onboarding instead of leaving this screen stuck
+            // on its loading spinner forever.
+            session.signOut()
+            return
+        }
+        guard !user.isRemoved else {
+            // Von einem Admin entfernt (Soft-Delete): die Entfernung greift
+            // jetzt auch auf dem Gerät des Mitglieds. Zurück kommt es nur
+            // über seinen Wiedereinstiegs-Code (den Admin-Entfernung
+            // widerruft) oder einen Neu-Beitritt.
             session.signOut()
             return
         }

@@ -121,6 +121,13 @@ für dich erledigen, dafür gibt es keine API:
    Soft-Delete beim Entfernen aus der Gruppe) — ohne dieses Feld schlägt
    `deleteUser` fehl. Muss **nicht** Queryable sein, da nach dem Laden
    client-seitig in Swift gefiltert wird, nicht per CloudKit-Query.
+   **Gleicher Schritt nötig für `reconnectCode`** (Typ String, Stand
+   2026-10-25, Wiedereinstiegs-Code aus Einstellungen → Profil) — ohne das
+   Feld schlägt das Speichern eines Codes (`setReconnectCode`) fehl. Muss
+   ebenfalls **nicht** Queryable sein (Lookup läuft client-seitig über die
+   bestehende `groupID`-Query). Vor dem nächsten TestFlight-Build außerdem
+   per "Deploy Schema Changes" nach **Production** bringen, sonst können
+   TestFlight-Nutzer keinen Code speichern.
    **Zusätzlich für die Web-App (`web/worker-app/`):** `SurveyDay.date`
    muss zusätzlich als **Sortable** markiert sein — die Kalender-Ansicht
    filtert per Zeitraum (`GREATER_THAN_OR_EQUALS`/`LESS_THAN_OR_EQUALS`),
