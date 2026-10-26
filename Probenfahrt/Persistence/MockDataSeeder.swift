@@ -134,12 +134,12 @@ enum MockDataSeeder {
         guard let rangeEnd = calendar.date(byAdding: .day, value: 14, to: today) else { return }
         guard let days = try? await surveyRepository.surveyDays(from: today, to: rangeEnd, groupID: groupID), days.count >= 4 else { return }
 
-        try? await surveyRepository.signIn(userID: users[0].id, dayID: days[1].id, bypassLock: false)
+        try? await surveyRepository.signIn(userID: users[0].id, day: days[1], bypassLock: false)
 
-        try? await surveyRepository.signIn(userID: users[0].id, dayID: days[2].id, bypassLock: false)
-        try? await surveyRepository.signIn(userID: users[1].id, dayID: days[2].id, bypassLock: false)
+        try? await surveyRepository.signIn(userID: users[0].id, day: days[2], bypassLock: false)
+        try? await surveyRepository.signIn(userID: users[1].id, day: days[2], bypassLock: false)
 
-        try? await surveyRepository.signIn(userID: users[2].id, dayID: days[3].id, bypassLock: false)
+        try? await surveyRepository.signIn(userID: users[2].id, day: days[3], bypassLock: false)
         try? await surveyRepository.setLocked(true, reason: "Wird an diesem Tag nicht gefahren", dayID: days[3].id)
     }
 
@@ -201,7 +201,7 @@ enum MockDataSeeder {
 
         for (dayOffset, day) in days.enumerated() {
             for index in attendeeIndices(for: dayOffset) {
-                try? await surveyRepository.signIn(userID: users[index].id, dayID: day.id, bypassLock: false)
+                try? await surveyRepository.signIn(userID: users[index].id, day: day, bypassLock: false)
             }
         }
     }

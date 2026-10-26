@@ -29,7 +29,14 @@ protocol SurveyRepository {
     /// `bypassLock`: regular self-service sign-in/out must respect a locked
     /// day (pass `false`); the admin "Teilnehmer verwalten" panel is allowed
     /// to edit a locked day on purpose (pass `true`).
-    func signIn(userID: UUID, dayID: UUID, bypassLock: Bool) async throws
+    /// Takes the full `SurveyDay` (callers always have it) instead of a
+    /// dayID on purpose: the previous dayID-based lookup ran a CloudKit
+    /// QUERY, which is eventually consistent — for a freshly created day it
+    /// could come back empty, and signIn then silently did nothing while
+    /// the optimistic UI already showed the checkmark ("Ich war doch
+    /// eingetragen!?", 2026-10-26). Errors are thrown, never swallowed, so
+    /// the UI can roll the optimistic toggle back.
+    func signIn(userID: UUID, day: SurveyDay, bypassLock: Bool) async throws
     func signOut(userID: UUID, dayID: UUID) async throws
     func setLocked(_ locked: Bool, reason: String?, dayID: UUID) async throws
     func entriesWithDates(inMonth month: Int, year: Int, groupID: UUID) async throws -> [SurveyEntryWithDate]

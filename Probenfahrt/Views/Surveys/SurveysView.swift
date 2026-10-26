@@ -105,7 +105,7 @@ struct SurveysView: View {
             if isSignedIn {
                 try await surveyRepository.signOut(userID: currentUser.id, dayID: row.day.id)
             } else {
-                try await surveyRepository.signIn(userID: currentUser.id, dayID: row.day.id, bypassLock: false)
+                try await surveyRepository.signIn(userID: currentUser.id, day: row.day, bypassLock: false)
             }
         } catch {
             await load()

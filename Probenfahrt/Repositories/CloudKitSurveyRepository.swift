@@ -70,19 +70,34 @@ final class CloudKitSurveyRepository: SurveyRepository {
         return try await allRecords(matching: query).map(Self.entry(from:))
     }
 
-    func signIn(userID: UUID, dayID: UUID, bypassLock: Bool) async throws {
-        guard let day = try await fetchDay(id: dayID) else { return }
+    func signIn(userID: UUID, day: SurveyDay, bypassLock: Bool) async throws {
         guard bypassLock || !day.isLocked else { throw SurveyRepositoryError.dayLocked }
-        let recordID = Self.entryRecordID(dayID: dayID, userID: userID)
-        guard (try? await database.record(for: recordID)) == nil else { return }
-        let entry = SurveyEntry(surveyDayID: dayID, userID: userID, groupID: day.groupID)
+        let recordID = Self.entryRecordID(dayID: day.id, userID: userID)
+        // Existenz-Check per Record-ID-Fetch (stark konsistent, keine
+        // Query). Nur "existiert nicht" führt zum Anlegen — jeder andere
+        // Fehler (kein Netz etc.) wird geworfen, damit SurveysView den
+        // optimistischen Haken zurücknimmt, statt Erfolg vorzutäuschen.
+        do {
+            _ = try await database.record(for: recordID)
+            return // schon eingetragen — idempotent
+        } catch let error as CKError where error.code == .unknownItem {
+            // noch kein Eintrag — unten anlegen
+        }
+        let entry = SurveyEntry(surveyDayID: day.id, userID: userID, groupID: day.groupID)
         let record = CKRecord(recordType: RecordType.entry, recordID: recordID)
         Self.apply(entry, to: record)
         _ = try await database.save(record)
     }
 
     func signOut(userID: UUID, dayID: UUID) async throws {
-        _ = try? await database.deleteRecord(withID: Self.entryRecordID(dayID: dayID, userID: userID))
+        do {
+            _ = try await database.deleteRecord(withID: Self.entryRecordID(dayID: dayID, userID: userID))
+        } catch let error as CKError where error.code == .unknownItem {
+            // Eintrag existiert nicht (mehr) — Ziel erreicht, kein Fehler.
+            // Alle anderen Fehler werden geworfen (das frühere try? hat
+            // einen fehlgeschlagenen Austrag still verschluckt, die UI
+            // zeigte dann fälschlich "ausgetragen").
+        }
     }
 
     func setLocked(_ locked: Bool, reason: String?, dayID: UUID) async throws {
@@ -164,11 +179,6 @@ final class CloudKitSurveyRepository: SurveyRepository {
         let predicate = NSPredicate(format: "%K == %@", DayField.dayID, id.uuidString)
         let query = CKQuery(recordType: RecordType.day, predicate: predicate)
         return try await allRecords(matching: query).first
-    }
-
-    private func fetchDay(id: UUID) async throws -> SurveyDay? {
-        guard let record = try await dayRecord(id: id) else { return nil }
-        return Self.day(from: record)
     }
 
     private func allRecords(matching query: CKQuery) async throws -> [CKRecord] {
